@@ -62,7 +62,7 @@ Add to your `.mcp.json`:
 - **8 streaming protocols** — WebRTC, SRT, RTMP, NDI, HLS, DASH, WHIP, OMT
 - **Sub-second latency** — optimized for real-time production
 - **Multi-region architecture** — designed for enterprise scale and reliability
-- **Usage-based pricing** — free tier included, pay as you grow
+- **Usage-based pricing** — pay per API call, plans from $19/month
 
 ## Links
 
