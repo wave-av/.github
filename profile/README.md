@@ -1,6 +1,6 @@
 # WAVE
 
-**The video layer for AI agents.** Stream, produce, and deliver live video at enterprise scale.
+**The video layer for AI agents.** Stream, produce, and deliver live video at scale.
 
 Like Stripe is for payments and Resend is for email — **WAVE is for live streaming and video.**
 
@@ -60,10 +60,9 @@ Add to your `.mcp.json`:
 ## Platform
 
 - **8 streaming protocols** — WebRTC, SRT, RTMP, NDI, HLS, DASH, WHIP, OMT
-- **Sub-16ms latency** — glass-to-glass, real-time production
-- **100M+ concurrent viewers** — enterprise-grade infrastructure
-- **99.99% uptime SLA** — multi-region, automatic failover
-- **SOC 2 Type II certified** — enterprise security and compliance
+- **Sub-second latency** — optimized for real-time production
+- **Multi-region architecture** — designed for enterprise scale and reliability
+- **Usage-based pricing** — free tier included, pay as you grow
 
 ## Links
 
