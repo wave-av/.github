@@ -1,0 +1,7 @@
+{
+  "name": "MoQ draft drift",
+  "description": "Check IETF MoQ Transport draft version drift against the current working-group draft (currently draft-17). Fails CI when stale draft-00..draft-06 refs leak in outside the negotiation matrix. Use in any WAVE repo that mentions MoQ Transport.",
+  "iconName": "octicon broadcast",
+  "categories": ["Continuous integration", "WAVE"],
+  "filePatterns": ["wrangler.toml", "**/*.ts", "**/*.md", "package.json"]
+}
