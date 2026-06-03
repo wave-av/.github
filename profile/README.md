@@ -80,7 +80,7 @@ Tools for streams, studio, analytics, billing, and production controls — and e
 - [Documentation](https://docs.wave.online)
 - [Agent commerce](https://wave.online/agent-commerce) · [Protocol](https://wave.online/protocol) · [The name](https://wave.online/av)
 - [Status](https://wave.online/status)
-- [npm](https://www.npmjs.com/org/wave-av)
+- [npm](https://www.npmjs.com/package/@wave-av/sdk)
 
 ## Security
 
