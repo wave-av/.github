@@ -1,0 +1,13 @@
+{
+  "schemaVersion": "1",
+  "repo": "wave-av/.github",
+  "version": "1.0.0",
+  "lifecycle": "ga",
+  "planeLayer": null,
+  "foundationPin": "v1",
+  "maintainers": [{ "team": "core" }],
+  "consumes": {
+    "foundationFrameworks": ["frameworks/platform-registry", "frameworks/repo-governance"]
+  },
+  "tags": ["governance", "public", "community-health", "org-defaults"]
+}
