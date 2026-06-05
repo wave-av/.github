@@ -1,14 +1,30 @@
 name: public-repo-guard
 
-# Active self-instance: this is the canonical-source repo, so it runs its OWN
-# local copies of .gitleaks.toml and content-policy.sh (no curl bootstrap). Other
-# WAVE public repos install the copy under workflow-templates/, which fetches
-# these same files from this repo's main branch.
+# Pre-publication content gate for WAVE public repos. Two complementary checks:
+#   1. gitleaks  — formatted secrets (API keys, tokens, private keys) in the tree.
+#   2. content-policy.sh — WAVE-specific leaks gitleaks misses: live Stripe account
+#      IDs, hardcoded Cloudflare account_ids, developer absolute paths, references
+#      to private WAVE repos, and committed .env files.
+#
+# Self-contained by design: the gitleaks config (.gitleaks.toml) and the policy
+# script (scripts/public-repo-guard/content-policy.sh) are VENDORED into this repo,
+# not fetched at run time, so the gate is fully reviewable, deterministic, and can
+# never be altered out-of-band (a push to another repo's default branch must not be
+# able to reprogram this repo's secret scanner). The gitleaks binary is both
+# version-pinned AND SHA-256-verified before it is allowed to run.
+#
+# Scan scope: the published working TREE (gitleaks --no-git), NOT git history. The
+# goal is "what is public right now is clean", so a shallow checkout is sufficient.
+# History scanning is intentionally out of scope (it would re-flag already-
+# remediated historical commits and is a separate, heavier concern).
+#
+# Allowlisting: annotate a verified-safe line with `# guard:allow <reason>`, add a
+# path glob to a repo-root `.guardignore`, or extend the repo-local `.gitleaks.toml`.
 
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, master]
   workflow_dispatch:
 
 permissions:
@@ -24,21 +40,25 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1
-        with:
-          fetch-depth: 0
 
-      # The gitleaks GitHub Action requires a paid license for organizations; the
-      # gitleaks CLI itself is MIT-licensed and free. Run the binary directly.
-      - name: Install gitleaks
+      # gitleaks' GitHub Action requires a paid license for organizations; the CLI
+      # itself is MIT-licensed and free. Pin the version AND verify the release
+      # tarball's SHA-256 before extracting, so a tampered or MITM'd download can
+      # never execute inside the security gate.
+      - name: Install gitleaks (pinned + checksum-verified)
         env:
           GITLEAKS_VERSION: "8.30.1"
+          GITLEAKS_SHA256: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
         run: |
-          curl -fsSL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
-            | tar -xz gitleaks
-          sudo install -m 0755 gitleaks /usr/local/bin/gitleaks && rm -f gitleaks
+          curl -fsSL --proto '=https' --tlsv1.2 -o gitleaks.tar.gz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf gitleaks.tar.gz gitleaks
+          sudo install -m 0755 gitleaks /usr/local/bin/gitleaks
+          rm -f gitleaks gitleaks.tar.gz
           gitleaks version
 
-      - name: gitleaks (secret scan)
+      - name: gitleaks (secret scan — published tree)
         run: gitleaks detect --no-git --source . --config .gitleaks.toml --redact --no-banner --exit-code 1
 
       - name: Install ripgrep
