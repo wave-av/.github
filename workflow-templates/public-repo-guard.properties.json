@@ -1,0 +1,7 @@
+{
+  "name": "Public-repo guard (secrets + content policy)",
+  "description": "Blocking pre-publication gate for WAVE public repos. Runs gitleaks for formatted secrets plus the WAVE content-policy script for the things gitleaks misses: live Stripe account IDs, hardcoded Cloudflare account_ids, developer absolute paths, private-repo references, and committed .env files. Rules are pulled from the canonical source (wave-av/.github). Install on every public repo.",
+  "iconName": "octicon shield-lock",
+  "categories": ["Continuous integration", "Security", "WAVE"],
+  "filePatterns": [".*"]
+}
