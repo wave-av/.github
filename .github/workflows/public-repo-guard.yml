@@ -1,0 +1,40 @@
+name: public-repo-guard
+
+# Active self-instance: this is the canonical-source repo, so it runs its OWN
+# local copies of .gitleaks.toml and content-policy.sh (no curl bootstrap). Other
+# WAVE public repos install the copy under workflow-templates/, which fetches
+# these same files from this repo's main branch.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: public-repo-guard-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  guard:
+    name: Secrets + content policy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: gitleaks (secret scan)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITLEAKS_CONFIG: .gitleaks.toml
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: "false"
+          GITLEAKS_ENABLE_SUMMARY: "true"
+
+      - name: content policy (WAVE trade-secret / internal-leak gate)
+        env:
+          GUARD_PRIVATE_REPOS: ${{ vars.GUARD_PRIVATE_REPOS }}
+        run: bash scripts/public-repo-guard/content-policy.sh .
