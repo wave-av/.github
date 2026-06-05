@@ -27,12 +27,19 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: gitleaks (secret scan)
-        uses: gitleaks/gitleaks-action@v2
+      # The gitleaks GitHub Action requires a paid license for organizations; the
+      # gitleaks CLI itself is MIT-licensed and free. Run the binary directly.
+      - name: Install gitleaks
         env:
-          GITLEAKS_CONFIG: .gitleaks.toml
-          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: "false"
-          GITLEAKS_ENABLE_SUMMARY: "true"
+          GITLEAKS_VERSION: "8.30.1"
+        run: |
+          curl -fsSL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            | tar -xz gitleaks
+          sudo install -m 0755 gitleaks /usr/local/bin/gitleaks && rm -f gitleaks
+          gitleaks version
+
+      - name: gitleaks (secret scan)
+        run: gitleaks detect --no-git --source . --config .gitleaks.toml --redact --no-banner --exit-code 1
 
       - name: content policy (WAVE trade-secret / internal-leak gate)
         env:
