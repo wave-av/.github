@@ -7,16 +7,19 @@ name: public-repo-guard
 #      to private WAVE repos, and committed .env files.
 #
 # Self-contained by design: the gitleaks config (.gitleaks.toml) and the policy
-# script (scripts/public-repo-guard/content-policy.sh) are VENDORED into this repo,
-# not fetched at run time, so the gate is fully reviewable, deterministic, and can
-# never be altered out-of-band (a push to another repo's default branch must not be
-# able to reprogram this repo's secret scanner). The gitleaks binary is both
-# version-pinned AND SHA-256-verified before it is allowed to run.
+# script (scripts/public-repo-guard/content-policy.sh) are VENDORED into the repo
+# alongside this workflow — they are NOT fetched at run time. The gate is therefore
+# fully reviewable, deterministic, and cannot be reprogrammed out-of-band (a push to
+# wave-av/.github must not be able to alter another repo's secret scanner). The
+# gitleaks binary is version-pinned AND SHA-256-verified before it runs.
+#
+# To install on a new repo, copy all three files together:
+#   .github/workflows/public-repo-guard.yml
+#   .gitleaks.toml
+#   scripts/public-repo-guard/content-policy.sh
 #
 # Scan scope: the published working TREE (gitleaks --no-git), NOT git history. The
 # goal is "what is public right now is clean", so a shallow checkout is sufficient.
-# History scanning is intentionally out of scope (it would re-flag already-
-# remediated historical commits and is a separate, heavier concern).
 #
 # Allowlisting: annotate a verified-safe line with `# guard:allow <reason>`, add a
 # path glob to a repo-root `.guardignore`, or extend the repo-local `.gitleaks.toml`.
