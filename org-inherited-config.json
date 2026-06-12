@@ -1,0 +1,44 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "WAVE org-wide Renovate config (inherited by every wave-av repo). Auto, but gated by CI.",
+  "extends": ["config:recommended", ":dependencyDashboard", ":semanticCommits", "group:recommended"],
+  "labels": ["dependencies"],
+  "minimumReleaseAge": "3 days",
+  "prHourlyLimit": 4,
+  "prConcurrentLimit": 10,
+  "platformAutomerge": true,
+  "vulnerabilityAlerts": { "enabled": true, "labels": ["security", "priority:high"], "minimumReleaseAge": "0 days" },
+  "packageRules": [
+    {
+      "description": "Internal @wave-av packages (spoke-chassis etc.): bump immediately + automerge minor/patch. Still CI-gated by platformAutomerge — never merges a red PR.",
+      "matchPackageNames": ["/^@wave-av//"],
+      "minimumReleaseAge": "0 days",
+      "automerge": true,
+      "matchUpdateTypes": ["minor", "patch"],
+      "prPriority": 5
+    },
+    {
+      "description": "Pin GitHub Actions to SHA + automerge patch/minor (supply-chain hygiene).",
+      "matchManagers": ["github-actions"],
+      "pinDigests": true,
+      "automerge": true,
+      "matchUpdateTypes": ["patch", "minor"]
+    },
+    {
+      "description": "Security updates — immediate, no release-age wait.",
+      "matchCategories": ["security"],
+      "minimumReleaseAge": "0 days",
+      "automerge": true,
+      "labels": ["security", "priority:high"],
+      "prPriority": 10
+    },
+    {
+      "description": "Major updates — never auto-merge; a human reviews.",
+      "matchUpdateTypes": ["major"],
+      "automerge": false,
+      "labels": ["breaking-change"],
+      "prPriority": -1
+    }
+  ],
+  "ignorePaths": ["**/node_modules/**", "**/vendor/**", "staging/**"]
+}
