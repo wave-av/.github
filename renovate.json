@@ -1,17 +1,28 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["config:recommended", ":dependencyDashboard", "helpers:pinGitHubActionDigests"],
+  "extends": [
+    "config:recommended",
+    ":dependencyDashboard",
+    "helpers:pinGitHubActionDigests"
+  ],
   "npmrc": "@wave-av:registry=https://npm.pkg.github.com",
   "packageRules": [
     {
       "description": "WAVE internal packages (the spoke-chassis): keep every spoke on the LATEST published version. Labeled chassis-automerge so the renovate-reaper (wave-foundation) auto-approves + squash-merges these after its diff/lockfile/deploy gates — which then triggers each spoke's deploy-on-merge.",
-      "matchPackagePatterns": ["^@wave-av/"],
+      "matchPackagePatterns": [
+        "^@wave-av/"
+      ],
       "rangeStrategy": "bump",
       "semanticCommitType": "chore",
       "commitMessageTopic": "spoke-chassis",
-      "labels": ["chassis-automerge"],
+      "labels": [
+        "chassis-automerge"
+      ],
       "minimumReleaseAge": "0 days"
     }
   ],
-  "schedule": ["after 1am and before 6am"]
+  "schedule": [
+    "after 1am and before 6am"
+  ],
+  "timezone": "America/New_York"
 }
