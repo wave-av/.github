@@ -1,0 +1,30 @@
+name: scheduled-job
+
+# WAVE authoring category: SCHEDULED / CRON. Runs on a timer. Full standard:
+# wave-av/wave-foundation → rules/workflow-authoring.md
+#
+#   Triggers: schedule (cron) + workflow_dispatch (so you can also run it by hand).
+#   Concurrency: group + cancel-in-progress: true — don't let overlapping runs stack.
+#   Cadence: BOUND it. Cost = frequency x job-minutes. A */5 schedule is 288 runs/day;
+#     pick the loosest interval that meets the need, then narrow only if required.
+#   Runner: ubuntu-latest.
+
+on:
+  schedule:
+    - cron: '0 6 * * *'   # daily 06:00 UTC — widen before you narrow
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scheduled task
+        run: echo "replace with your scheduled task"

@@ -1,0 +1,29 @@
+name: reusable-workflow
+
+# WAVE authoring category: REUSABLE (workflow_call). Called by other workflows.
+# Full standard: wave-av/wave-foundation → rules/workflow-authoring.md
+#
+#   Trigger: workflow_call: ONLY.
+#   Concurrency: NONE — deliberately. A cancel-in-progress here fires across EVERY
+#     caller, so one repo's new commit could cancel another repo's release mid-flight.
+#     The CALLER owns concurrency; a reusable workflow must not declare it.
+#   Runner: inherit from the caller's job.
+
+on:
+  workflow_call:
+    inputs:
+      example:
+        description: 'Describe your input'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reusable step
+        run: echo "reusable logic here (no concurrency block belongs in this file)"

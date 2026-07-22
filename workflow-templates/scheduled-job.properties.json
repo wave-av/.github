@@ -1,0 +1,7 @@
+{
+  "name": "WAVE scheduled job (cron)",
+  "description": "Runs on a timer. Pre-wired to the WAVE Workflow Authoring Standard — schedule + workflow_dispatch triggers, concurrency with cancel-in-progress:true so overlapping runs don't stack, and a bounded default cadence (daily) with a reminder that cost = frequency x job-minutes. Full rules: wave-foundation/rules/workflow-authoring.md.",
+  "iconName": "octicon clock",
+  "categories": ["Automation", "Continuous integration", "WAVE"],
+  "filePatterns": [".*"]
+}
