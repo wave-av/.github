@@ -1,0 +1,30 @@
+name: release-publish
+
+# WAVE authoring category: RELEASE / PUBLISH. Fires on a version tag and publishes an
+# artifact (GitHub release, package, image). Full standard:
+# wave-av/wave-foundation → rules/workflow-authoring.md
+#
+#   Trigger: push: tags.
+#   Concurrency: cancel-in-progress: FALSE. NEVER interrupt an in-flight publish — a
+#     cancelled release can leave a half-pushed tag, package, or registry state.
+#   Runner: ubuntu-latest unless the build is MEASURED heavy.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write   # publishing a release/tag typically needs write; scope to what you use
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Publish
+        run: echo "replace with your release / publish step"

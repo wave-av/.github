@@ -1,0 +1,7 @@
+{
+  "name": "WAVE reusable workflow (workflow_call)",
+  "description": "A reusable workflow invoked by other workflows via workflow_call. Pre-wired to the WAVE Workflow Authoring Standard — the counterintuitive rule: NO concurrency block here, because cancel-in-progress in a called workflow fires across every caller and can cancel an unrelated repo's run. The caller owns concurrency. Full rules: wave-foundation/rules/workflow-authoring.md.",
+  "iconName": "octicon share",
+  "categories": ["Continuous integration", "WAVE"],
+  "filePatterns": [".*"]
+}

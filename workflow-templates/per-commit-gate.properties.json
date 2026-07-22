@@ -1,0 +1,7 @@
+{
+  "name": "WAVE per-commit gate",
+  "description": "The workhorse CI category: runs on every PR commit and on the trunk. Pre-wired to the WAVE Workflow Authoring Standard — pull_request + push(branches-ignore gh-readonly-queue/**), concurrency with cancel-in-progress:true (anti-runaway), ubuntu-latest. Includes a commented merge_group: trigger to uncomment if the check becomes required on a merge-queue repo. Full rules: wave-foundation/rules/workflow-authoring.md.",
+  "iconName": "octicon check-circle",
+  "categories": ["Continuous integration", "WAVE"],
+  "filePatterns": [".*"]
+}

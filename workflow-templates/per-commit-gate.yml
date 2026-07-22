@@ -1,0 +1,40 @@
+name: per-commit-gate
+
+# WAVE authoring category: PER-COMMIT GATE (the workhorse — most CI is this one).
+# Runs on every PR commit and on the trunk. Full standard:
+# wave-av/wave-foundation → rules/workflow-authoring.md
+#
+#   Triggers: pull_request + push(branches-ignore gh-readonly-queue/**).
+#     The branches-ignore is LOAD-BEARING on a merge-queue repo: the queue creates
+#     gh-readonly-queue/** branches; an unfiltered push: there shares this workflow's
+#     concurrency group with the merge_group run and cancels it — the PR evicts
+#     itself from the queue (the #852 incident). Keep the ignore.
+#   Concurrency: group per workflow+ref, cancel-in-progress: true. A new commit
+#     supersedes the stale run instead of stacking — this is the anti-runaway rule.
+#   Runner: ubuntu-latest. Fleet jobs run 5–70s; a bigger/paid runner costs MORE.
+#
+# IF THIS BECOMES A REQUIRED status check on a merge-queue repo, UNCOMMENT the
+# merge_group: trigger below. A required check that never runs on merge_group leaves
+# every PR AWAITING_CHECKS and deadlocks the queue (the #855 incident).
+
+on:
+  pull_request:
+  push:
+    branches-ignore:
+      - 'gh-readonly-queue/**'
+  # merge_group:   # <- uncomment IFF this workflow is a REQUIRED check (see header)
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run checks
+        run: echo "replace with your build / test / lint"

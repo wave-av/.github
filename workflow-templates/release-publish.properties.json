@@ -1,0 +1,7 @@
+{
+  "name": "WAVE release / publish",
+  "description": "Publishes an artifact on a version tag (release, package, image). Pre-wired to the WAVE Workflow Authoring Standard — push:tags trigger, concurrency with cancel-in-progress:FALSE so an in-flight publish is never interrupted (a cancelled release can leave half-pushed state). Full rules: wave-foundation/rules/workflow-authoring.md.",
+  "iconName": "octicon tag",
+  "categories": ["Deployment", "Continuous integration", "WAVE"],
+  "filePatterns": [".*"]
+}
