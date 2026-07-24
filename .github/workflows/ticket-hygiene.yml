@@ -27,6 +27,8 @@ concurrency:
 
 env:
   PROJECT_ID: PVT_kwDODJSefc4BeLIW   # WAVE — Work (org project #3)
+  AREA_FIELD_ID: PVTSSF_lADODJSefc4BeLIWzhYnUa0
+  PRIORITY_FIELD_ID: PVTSSF_lADODJSefc4BeLIWzhYnUaw
 
 jobs:
   map-fields:
@@ -121,25 +123,99 @@ jobs:
               query($p:ID!,$after:String){ node(id:$p){ ... on ProjectV2 {
                 items(first:100,after:$after){ pageInfo{ hasNextPage endCursor }
                   nodes{
+                    id
                     fieldValues(first:30){ nodes{ ... on ProjectV2ItemFieldSingleSelectValue {
                       name field{ ... on ProjectV2SingleSelectField { name } } } } }
-                    content{ ... on Issue { number state repository{ nameWithOwner } url } }
+                    content{ ... on Issue { number state repository{ nameWithOwner } url author{ login } } }
                   } } } } }' -F p="$PROJECT_ID" ${after:+-F after="$after"})"
             echo "$resp" | jq -c '.data.node.items.nodes[]
               | select(.content!=null and .content.state=="OPEN")
-              | { repo:.content.repository.nameWithOwner, num:.content.number, url:.content.url,
+              | { itemId:.id, repo:.content.repository.nameWithOwner, num:.content.number, url:.content.url,
+                  author:(.content.author.login // ""),
                   area:([.fieldValues.nodes[]|select(.field.name=="Area")|.name]|first),
                   prio:([.fieldValues.nodes[]|select(.field.name=="Priority")|.name]|first) }
               | select(.area==null or .prio==null)' > flagged.jsonl || true
+
+            # Fixed allow-list, case-sensitive exact match only — the author login is NEVER
+            # interpolated into a query or shell command, only compared in a bash case.
+            bot_area_priority() {
+              case "$1" in
+                "renovate[bot]"|"dependabot[bot]"|"socket-security[bot]") echo "$AREA_FIELD_ID:7c7e1985 $PRIORITY_FIELD_ID:13a5abc5" ;;
+                "corridor-security[bot]") echo "$AREA_FIELD_ID:024801bd $PRIORITY_FIELD_ID:461ad6cf" ;;
+                *) echo "" ;;
+              esac
+            }
+            set_project_field() {  # $1=itemId  $2=fieldId  $3=optionId
+              gh api graphql -f query='
+                mutation($p:ID!,$i:ID!,$f:ID!,$o:String!){ updateProjectV2ItemFieldValue(input:{
+                  projectId:$p,itemId:$i,fieldId:$f,value:{singleSelectOptionId:$o}}){ projectV2Item{ id } } }' \
+                -F p="$PROJECT_ID" -F i="$1" -F f="$2" -F o="$3" >/dev/null
+            }
+
+            classified=0
             while IFS= read -r row; do
               [ -n "$row" ] || continue
               repo="$(jq -r .repo <<<"$row")"; num="$(jq -r .num <<<"$row")"
-              gh issue edit "$num" -R "$repo" --add-label needs-triage >/dev/null 2>&1 || true
-              missing=$((missing+1))
+              itemId="$(jq -r .itemId <<<"$row")"; login="$(jq -r .author <<<"$row")"
+              area="$(jq -r .area <<<"$row")"; prio="$(jq -r .prio <<<"$row")"
+              bot_vals="$(bot_area_priority "$login")"
+              if [ -n "$bot_vals" ]; then
+                for pair in $bot_vals; do
+                  fid="${pair%%:*}"; opt="${pair##*:}"
+                  if [ "$fid" = "$AREA_FIELD_ID" ] && [ "$area" = "null" ]; then
+                    set_project_field "$itemId" "$fid" "$opt"
+                  elif [ "$fid" = "$PRIORITY_FIELD_ID" ] && [ "$prio" = "null" ]; then
+                    set_project_field "$itemId" "$fid" "$opt"
+                  fi
+                done
+                classified=$((classified+1))
+              else
+                gh issue edit "$num" -R "$repo" --add-label needs-triage >/dev/null 2>&1 || true
+                missing=$((missing+1))
+              fi
             done < flagged.jsonl
             hasNext="$(jq -r '.data.node.items.pageInfo.hasNextPage' <<<"$resp")"
             after="$(jq -r '.data.node.items.pageInfo.endCursor' <<<"$resp")"
             [ "$hasNext" = "true" ] || break
           done
           echo "### Triage-health sweep" >> "$GITHUB_STEP_SUMMARY"
-          echo "Flagged **$missing** open board item(s) missing Area or Priority as \`needs-triage\`." >> "$GITHUB_STEP_SUMMARY"
+          echo "Flagged **$missing** open board item(s) missing Area or Priority as \`needs-triage\`; auto-classified **$classified** known-bot item(s)." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Auto-add non-WSC issues to the board
+        env:
+          GH_TOKEN: ${{ steps.tok.outputs.token }}
+        run: |
+          set -euo pipefail
+          added=0; capped="no"; after=""; page=0
+          while : ; do
+            page=$((page+1)); [ "$page" -le 20 ] || break
+            resp="$(gh api graphql -f query='
+              query($q:String!,$after:String){ search(query:$q, type:ISSUE, first:100, after:$after){
+                pageInfo{ hasNextPage endCursor }
+                nodes{ ... on Issue { id number repository{ nameWithOwner }
+                  projectItems(first:10){ nodes{ project{ id } } } } } } }' \
+              -F q="org:wave-av is:issue is:open -repo:wave-av/wave-surfer-connect" ${after:+-F after="$after"})"
+            echo "$resp" | jq -c --arg pid "$PROJECT_ID" '.data.search.nodes[]
+              | select(([.projectItems.nodes[].project.id] | index($pid)) == null)
+              | { id:.id, num:.number, repo:.repository.nameWithOwner }' > candidates.jsonl || true
+            while IFS= read -r row; do
+              [ -n "$row" ] || continue
+              [ "$added" -lt 200 ] || { capped="yes"; break; }
+              repo="$(jq -r .repo <<<"$row")"
+              # double-guard the WSC exclusion even though the search already excludes it
+              if [ "$repo" = "wave-av/wave-surfer-connect" ]; then continue; fi
+              nodeId="$(jq -r .id <<<"$row")"
+              gh api graphql -f query='
+                mutation($p:ID!,$c:ID!){ addProjectV2ItemById(input:{projectId:$p,contentId:$c}){ item{ id } } }' \
+                -F p="$PROJECT_ID" -F c="$nodeId" >/dev/null
+              added=$((added+1))
+            done < candidates.jsonl
+            [ "$added" -lt 200 ] || { capped="yes"; break; }
+            hasNext="$(jq -r '.data.search.pageInfo.hasNextPage' <<<"$resp")"
+            after="$(jq -r '.data.search.pageInfo.endCursor' <<<"$resp")"
+            [ "$hasNext" = "true" ] || break
+          done
+          if [ "$capped" = "yes" ]; then
+            echo "capped — more may remain beyond this run's 200-add limit"
+          fi
+          echo "Auto-added **$added** non-WSC issue(s) to the board (capped: $capped)." >> "$GITHUB_STEP_SUMMARY"
