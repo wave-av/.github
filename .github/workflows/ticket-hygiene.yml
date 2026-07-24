@@ -67,9 +67,9 @@ jobs:
 
           # --- resolve (or create) this issue's project item ---
           item="$(gh api graphql -f query='
-            query($n:ID!,$p:ID!){ node(id:$n){ ... on Issue {
+            query($n:ID!){ node(id:$n){ ... on Issue {
               projectItems(first:20,includeArchived:false){ nodes{ id project{ id } } } } } }' \
-            -F n="$ISSUE_NODE" -F p="$PROJECT_ID" \
+            -F n="$ISSUE_NODE" \
             --jq ".data.node.projectItems.nodes[]|select(.project.id==\"$PROJECT_ID\")|.id" | head -1 || true)"
           if [ -z "${item:-}" ]; then
             item="$(gh api graphql -f query='
