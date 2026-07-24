@@ -1,0 +1,27 @@
+.github/ISSUE_TEMPLATE/bug.yml
+  s_364605915bb7ec::t_c6565ead6ba814 1-53
+.github/workflows/ticket-hygiene.yml
+  s_364605915bb7ec::t_f2b4c7e82503e4 1-40,43-93,96-129
+  s_364605915bb7ec::t_c14515ff877b27 41-42
+  s_364605915bb7ec::t_45caf0bd8b87aa 94-95
+.github/ISSUE_TEMPLATE/task.yml
+  s_364605915bb7ec::t_3ff01ff34b2872 1-53
+.github/ISSUE_TEMPLATE/feature.yml
+  s_364605915bb7ec::t_26f6089ebaa487 1-53
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "e4bcbcf0c989b64537e022a93a5bbc413a8bd7b3",
+  "prompts": {},
+  "sessions": {
+    "s_364605915bb7ec": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d367c84a-2390-40de-b101-d4f0e674783a",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Jake Fineman <jakefineman@gmail.com>"
+    }
+  }
+}
