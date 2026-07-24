@@ -184,9 +184,12 @@ jobs:
       - name: Auto-add non-WSC issues to the board
         env:
           GH_TOKEN: ${{ steps.tok.outputs.token }}
+          EXCLUDE_REPO: ${{ vars.HYGIENE_EXCLUDE_REPOS }}
         run: |
           set -euo pipefail
           added=0; capped="no"; after=""; page=0
+          # excluded repo is injected via a repo variable so its (private) name stays out of this public source
+          excl=""; [ -n "${EXCLUDE_REPO:-}" ] && excl="-repo:$EXCLUDE_REPO"
           while : ; do
             page=$((page+1)); [ "$page" -le 20 ] || break
             resp="$(gh api graphql -f query='
@@ -194,7 +197,7 @@ jobs:
                 pageInfo{ hasNextPage endCursor }
                 nodes{ ... on Issue { id number repository{ nameWithOwner }
                   projectItems(first:10){ nodes{ project{ id } } } } } } }' \
-              -F q="org:wave-av is:issue is:open -repo:wave-av/wave-surfer-connect" ${after:+-F after="$after"})"
+              -F q="org:wave-av is:issue is:open $excl" ${after:+-F after="$after"})"
             echo "$resp" | jq -c --arg pid "$PROJECT_ID" '.data.search.nodes[]
               | select(([.projectItems.nodes[].project.id] | index($pid)) == null)
               | { id:.id, num:.number, repo:.repository.nameWithOwner }' > candidates.jsonl || true
@@ -203,7 +206,7 @@ jobs:
               [ "$added" -lt 200 ] || { capped="yes"; break; }
               repo="$(jq -r .repo <<<"$row")"
               # double-guard the WSC exclusion even though the search already excludes it
-              if [ "$repo" = "wave-av/wave-surfer-connect" ]; then continue; fi
+              if [ -n "${EXCLUDE_REPO:-}" ] && [ "$repo" = "$EXCLUDE_REPO" ]; then continue; fi
               nodeId="$(jq -r .id <<<"$row")"
               gh api graphql -f query='
                 mutation($p:ID!,$c:ID!){ addProjectV2ItemById(input:{projectId:$p,contentId:$c}){ item{ id } } }' \
