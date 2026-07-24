@@ -1,0 +1,53 @@
+name: Feature
+description: A new capability or enhancement.
+title: "[Feature] "
+type: Feature
+labels: ["feature"]
+projects: ["wave-av/3"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the idea. **Area** and **Priority** are required — they place this on the WAVE board correctly and keep the queue triaged.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / motivation
+      description: What need or gap does this address? Who is affected?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What you'd like to see. Sketch the shape; alternatives welcome.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Which WAVE pillar owns this?
+      options:
+        - Spine
+        - Spokes
+        - Fabric
+        - Ledger
+        - Observe
+        - Substrate
+        - Identity
+        - Charter
+        - Workstation
+    validations:
+      required: true
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      description: "P0 = drop-everything · P1 = this cycle · P2 = backlog"
+      options:
+        - P0
+        - P1
+        - P2
+    validations:
+      required: true
