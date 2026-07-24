@@ -1,0 +1,53 @@
+name: Task
+description: A unit of work — implementation, chore, or follow-up.
+title: "[Task] "
+type: Task
+labels: ["task"]
+projects: ["wave-av/3"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing. **Area** and **Priority** are required — they place this on the WAVE board correctly and keep the queue triaged.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What needs to be done, and why.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Which WAVE pillar owns this?
+      options:
+        - Spine
+        - Spokes
+        - Fabric
+        - Ledger
+        - Observe
+        - Substrate
+        - Identity
+        - Charter
+        - Workstation
+    validations:
+      required: true
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      description: "P0 = drop-everything · P1 = this cycle · P2 = backlog"
+      options:
+        - P0
+        - P1
+        - P2
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: How we'll know it's done — a concrete receipt (command + output, observed state, a merged PR).
+    validations:
+      required: true

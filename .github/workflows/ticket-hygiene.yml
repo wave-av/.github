@@ -1,0 +1,145 @@
+name: ticket-hygiene
+# Enforces the WAVE board's field discipline (Type/Area/Priority) — orthogonal to issue-ops-triage,
+# which only manages trust/category labels. Writes Projects v2 custom fields from the required Issue-Form
+# dropdowns, and sweeps the board for items still missing them.
+#
+# Auth: mints an installation token from the wave-issue-ops-bot App (org secrets BOT_ISSUE_OPS_APP_ID
+# / BOT_ISSUE_OPS_PRIVATE_KEY). The App must be granted "organization projects: write" for the board
+# writes to succeed (the default GITHUB_TOKEN cannot write org projects). Flip repo variable
+# HYGIENE_ENABLED=true to arm once the permission is granted.
+# Untrusted input (issue body) is passed via env and matched ONLY against the board's own option list —
+# never interpolated into a shell command or a query string.
+
+on:
+  issues:
+    types: [opened, edited]
+  schedule:
+    - cron: "17 14 * * *"   # daily 14:17 UTC board sweep
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: ticket-hygiene-${{ github.event.issue.number || 'sweep' }}
+  cancel-in-progress: true
+
+env:
+  PROJECT_ID: PVT_kwDODJSefc4BeLIW   # WAVE — Work (org project #3)
+
+jobs:
+  map-fields:
+    # Set Area/Priority board fields from the Issue-Form dropdown answers when an issue is filed/edited.
+    if: vars.HYGIENE_ENABLED == 'true' && github.event_name == 'issues'
+    runs-on: ubuntu-latest
+    env:
+      ISSUE_NODE: ${{ github.event.issue.node_id }}
+      ISSUE_NUM: ${{ github.event.issue.number }}
+      REPO: ${{ github.repository }}
+      BODY: ${{ github.event.issue.body }}
+    steps:
+      - name: Mint issue-ops App token
+        id: tok
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.BOT_ISSUE_OPS_APP_ID }}
+          private-key: ${{ secrets.BOT_ISSUE_OPS_PRIVATE_KEY }}
+          owner: wave-av
+      - name: Map dropdown answers → board fields
+        env:
+          GH_TOKEN: ${{ steps.tok.outputs.token }}
+        run: |
+          set -euo pipefail
+
+          # --- board field + option maps (queried live, no hardcoded drift) ---
+          fields="$(gh api graphql -f query='
+            query($p:ID!){ node(id:$p){ ... on ProjectV2 {
+              fields(first:50){ nodes{ ... on ProjectV2SingleSelectField {
+                id name options{ id name } } } } } } }' -F p="$PROJECT_ID")"
+
+          field_id() { jq -r --arg n "$1" '.data.node.fields.nodes[]|select(.name==$n)|.id' <<<"$fields"; }
+          option_id() { jq -r --arg n "$1" --arg v "$2" \
+            '.data.node.fields.nodes[]|select(.name==$n)|.options[]|select(.name==$v)|.id' <<<"$fields"; }
+
+          # First non-empty line under a "### <Heading>" section of the rendered form body.
+          answer() { awk -v h="### $1" 'BEGIN{f=0} $0==h{f=1;next} f&&NF{print;exit}' <<<"$BODY" | tr -d '\r'; }
+
+          # --- resolve (or create) this issue's project item ---
+          item="$(gh api graphql -f query='
+            query($n:ID!,$p:ID!){ node(id:$n){ ... on Issue {
+              projectItems(first:20,includeArchived:false){ nodes{ id project{ id } } } } } }' \
+            -F n="$ISSUE_NODE" -F p="$PROJECT_ID" \
+            --jq ".data.node.projectItems.nodes[]|select(.project.id==\"$PROJECT_ID\")|.id" | head -1 || true)"
+          if [ -z "${item:-}" ]; then
+            item="$(gh api graphql -f query='
+              mutation($p:ID!,$c:ID!){ addProjectV2ItemById(input:{projectId:$p,contentId:$c}){ item{ id } } }' \
+              -F p="$PROJECT_ID" -F c="$ISSUE_NODE" --jq '.data.addProjectV2ItemById.item.id')"
+            echo "added issue #$ISSUE_NUM to board as item $item"
+          fi
+
+          set_field() {  # $1=field name  $2=answer value
+            local fname="$1" val opt fid
+            val="$(answer "$fname")"
+            [ -n "$val" ] || { echo "no '$fname' answer in body — skipping"; return 0; }
+            fid="$(field_id "$fname")"; opt="$(option_id "$fname" "$val")"
+            if [ -z "$opt" ]; then echo "::warning::'$fname'='$val' not a valid board option — skipped"; return 0; fi
+            gh api graphql -f query='
+              mutation($p:ID!,$i:ID!,$f:ID!,$o:String!){ updateProjectV2ItemFieldValue(input:{
+                projectId:$p,itemId:$i,fieldId:$f,value:{singleSelectOptionId:$o}}){ projectV2Item{ id } } }' \
+              -F p="$PROJECT_ID" -F i="$item" -F f="$fid" -F o="$opt" >/dev/null
+            echo "set $fname = $val"
+          }
+
+          set_field "Area"
+          set_field "Priority"
+
+  sweep:
+    # Daily backstop: label any open board item still missing Area or Priority as needs-triage.
+    if: vars.HYGIENE_ENABLED == 'true' && github.event_name != 'issues'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mint issue-ops App token
+        id: tok
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.BOT_ISSUE_OPS_APP_ID }}
+          private-key: ${{ secrets.BOT_ISSUE_OPS_PRIVATE_KEY }}
+          owner: wave-av
+      - name: Flag under-fielded items
+        env:
+          GH_TOKEN: ${{ steps.tok.outputs.token }}
+        run: |
+          set -euo pipefail
+          missing=0; after=""; page=0
+          # ensure the label exists (idempotent)
+          gh label create needs-triage -R "$GITHUB_REPOSITORY" -c "#D93F0B" \
+            -d "On the board but missing Type/Area/Priority" 2>/dev/null || true
+          while : ; do
+            page=$((page+1)); [ "$page" -le 20 ] || break
+            resp="$(gh api graphql -f query='
+              query($p:ID!,$after:String){ node(id:$p){ ... on ProjectV2 {
+                items(first:100,after:$after){ pageInfo{ hasNextPage endCursor }
+                  nodes{
+                    fieldValues(first:30){ nodes{ ... on ProjectV2ItemFieldSingleSelectValue {
+                      name field{ ... on ProjectV2SingleSelectField { name } } } } }
+                    content{ ... on Issue { number state repository{ nameWithOwner } url } }
+                  } } } } }' -F p="$PROJECT_ID" ${after:+-F after="$after"})"
+            echo "$resp" | jq -c '.data.node.items.nodes[]
+              | select(.content!=null and .content.state=="OPEN")
+              | { repo:.content.repository.nameWithOwner, num:.content.number, url:.content.url,
+                  area:([.fieldValues.nodes[]|select(.field.name=="Area")|.name]|first),
+                  prio:([.fieldValues.nodes[]|select(.field.name=="Priority")|.name]|first) }
+              | select(.area==null or .prio==null)' > flagged.jsonl || true
+            while IFS= read -r row; do
+              [ -n "$row" ] || continue
+              repo="$(jq -r .repo <<<"$row")"; num="$(jq -r .num <<<"$row")"
+              gh issue edit "$num" -R "$repo" --add-label needs-triage >/dev/null 2>&1 || true
+              missing=$((missing+1))
+            done < flagged.jsonl
+            hasNext="$(jq -r '.data.node.items.pageInfo.hasNextPage' <<<"$resp")"
+            after="$(jq -r '.data.node.items.pageInfo.endCursor' <<<"$resp")"
+            [ "$hasNext" = "true" ] || break
+          done
+          echo "### Triage-health sweep" >> "$GITHUB_STEP_SUMMARY"
+          echo "Flagged **$missing** open board item(s) missing Area or Priority as \`needs-triage\`." >> "$GITHUB_STEP_SUMMARY"
