@@ -1,0 +1,25 @@
+.github/workflows/issue-ops-triage.yml
+  s_364605915bb7ec::t_7ce38f18782693 25-26
+  s_364605915bb7ec::t_ca2b2a3d4171f4 13-15
+.github/workflows/ticket-hygiene.yml
+  s_364605915bb7ec::t_316a07b55ce1dd 136,139
+  s_364605915bb7ec::t_8d06753e7c57ad 129-130
+  s_364605915bb7ec::t_a8e9eee190fe24 157,163-171
+  s_364605915bb7ec::t_b484c24d12b899 193
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "0c1518274b9651e10f8f80b8d877d78d5123cdcd",
+  "prompts": {},
+  "sessions": {
+    "s_364605915bb7ec": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d367c84a-2390-40de-b101-d4f0e674783a",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Jake Fineman <jakefineman@gmail.com>"
+    }
+  }
+}
