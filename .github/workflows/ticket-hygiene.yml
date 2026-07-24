@@ -3,8 +3,10 @@ name: ticket-hygiene
 # which only manages trust/category labels. Writes Projects v2 custom fields from the required Issue-Form
 # dropdowns, and sweeps the board for items still missing them.
 #
-# Auth: needs a token with org Projects v2 write (the default GITHUB_TOKEN cannot write org projects).
-# Provide it as secret HYGIENE_PROJECT_TOKEN, then flip repo variable HYGIENE_ENABLED=true to arm.
+# Auth: mints an installation token from the wave-issue-ops-bot App (org secrets BOT_ISSUE_OPS_APP_ID
+# / BOT_ISSUE_OPS_PRIVATE_KEY). The App must be granted "organization projects: write" for the board
+# writes to succeed (the default GITHUB_TOKEN cannot write org projects). Flip repo variable
+# HYGIENE_ENABLED=true to arm once the permission is granted.
 # Untrusted input (issue body) is passed via env and matched ONLY against the board's own option list —
 # never interpolated into a shell command or a query string.
 
@@ -37,9 +39,16 @@ jobs:
       REPO: ${{ github.repository }}
       BODY: ${{ github.event.issue.body }}
     steps:
+      - name: Mint issue-ops App token
+        id: tok
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.BOT_ISSUE_OPS_APP_ID }}
+          private-key: ${{ secrets.BOT_ISSUE_OPS_PRIVATE_KEY }}
+          owner: wave-av
       - name: Map dropdown answers → board fields
         env:
-          GH_TOKEN: ${{ secrets.HYGIENE_PROJECT_TOKEN }}
+          GH_TOKEN: ${{ steps.tok.outputs.token }}
         run: |
           set -euo pipefail
 
@@ -90,9 +99,16 @@ jobs:
     if: vars.HYGIENE_ENABLED == 'true' && github.event_name != 'issues'
     runs-on: ubuntu-latest
     steps:
+      - name: Mint issue-ops App token
+        id: tok
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.BOT_ISSUE_OPS_APP_ID }}
+          private-key: ${{ secrets.BOT_ISSUE_OPS_PRIVATE_KEY }}
+          owner: wave-av
       - name: Flag under-fielded items
         env:
-          GH_TOKEN: ${{ secrets.HYGIENE_PROJECT_TOKEN }}
+          GH_TOKEN: ${{ steps.tok.outputs.token }}
         run: |
           set -euo pipefail
           missing=0; after=""; page=0
