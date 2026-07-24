@@ -10,7 +10,9 @@ concurrency:
   cancel-in-progress: true
 jobs:
   triage:
-    if: vars.IO_ENABLED == 'true'
+    # Skip bot-authored issues (e.g. Renovate's Dependency Dashboard): their `edited` events
+    # fire this trigger but carry no author_association to trust-tier, and errored at 0s (#17).
+    if: vars.IO_ENABLED == 'true' && github.event.issue.user.type != 'Bot'
     uses: wave-av/wave-foundation/.github/workflows/io-triage.yml@5d0b9e1a35efdb6d4e2ba55c483af670b69a8470
     permissions:
       contents: read
@@ -20,6 +22,7 @@ jobs:
       scripts_ref: "5d0b9e1a35efdb6d4e2ba55c483af670b69a8470"
       owner: ${{ vars.IO_OWNER }}
     secrets:
-      gh_pat: ${{ secrets.ISSUE_OPS_PAT }}
+      # gh_pat dropped (#17): ISSUE_OPS_PAT is absent org/repo-wide; IO_USE_APP=true uses the App
+      # token, and the reusable io-triage.yml cascades apptoken || gh_pat || github.token anyway.
       bot_app_id: ${{ secrets.BOT_ISSUE_OPS_APP_ID }}
       bot_private_key: ${{ secrets.BOT_ISSUE_OPS_PRIVATE_KEY }}
