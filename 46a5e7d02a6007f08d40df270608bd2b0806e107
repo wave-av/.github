@@ -1,0 +1,20 @@
+.github/workflows/ticket-hygiene.yml
+  s_364605915bb7ec::t_f53fff662a4f3c 126,129,133-134,138-155,159-175,182-221
+  s_364605915bb7ec::t_7a306f5d24bbfd 30-31
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "46a5e7d02a6007f08d40df270608bd2b0806e107",
+  "prompts": {},
+  "sessions": {
+    "s_364605915bb7ec": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d367c84a-2390-40de-b101-d4f0e674783a",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Jake Fineman <jakefineman@gmail.com>"
+    }
+  }
+}
