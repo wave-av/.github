@@ -1,5 +1,26 @@
 name: MoQ draft drift
 
+# Notices when the IETF advances the MoQ Transport draft past the version this repo targets.
+#
+# Supply-chain posture (matches public-repo-guard.yml, the house standard in this repo):
+#   * The drift-check script is VENDORED-FIRST. If `scripts/check-moq-draft-version.sh` exists in
+#     the repo, that file runs and nothing is fetched — the gate is reviewable in-tree.
+#   * When it is absent, the fallback fetch is pinned to a COMMIT SHA (not `main`) and its SHA-256 is
+#     verified before the file is made executable. Previously this pulled `main` unpinned with no
+#     integrity check, so anyone who could push to wave-av/wave-moq-edge — or anyone who compromised
+#     it — got code execution in every repo that adopted this template, on every PR.
+#   * `actions/checkout` is pinned to a commit SHA, not a mutable `v5` tag.
+#   * The job declares least-privilege `contents: read` and does not persist the checkout credential.
+#
+# Refreshing the pin: bump SCRIPT_COMMIT to the new wave-moq-edge commit and set SCRIPT_SHA256 to
+#   curl -fsSL https://raw.githubusercontent.com/wave-av/wave-moq-edge/<sha>/scripts/check-moq-draft-version.sh | shasum -a 256
+# Both values change together, in a reviewed commit. A pin that is bumped without the digest is the
+# same hole with extra steps.
+#
+# Note on `pull_request`: this trigger runs with a read-only token and no secrets, so executing a
+# contributor's vendored script is ordinary CI behaviour. Do not convert this to
+# `pull_request_target` — that would hand a fork's code a write-scoped token.
+
 on:
   pull_request:
     paths:
@@ -18,22 +39,39 @@ on:
     - cron: "0 6 * * 1"
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: moq-draft-drift-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   drift:
     name: Check MoQ Transport draft version drift
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          persist-credentials: false
 
-      - name: Fetch shared drift-check script if not present
+      - name: Fetch shared drift-check script if not vendored
+        env:
+          # wave-av/wave-moq-edge @ scripts/check-moq-draft-version.sh
+          SCRIPT_COMMIT: c47c67c81c2b1acef0b54f07a26911ba3316d780
+          SCRIPT_SHA256: 0d671c3457b6bda5247681f5c12b9472908028b29f5a6f5074549349ab57363a
         run: |
-          if [[ ! -f scripts/check-moq-draft-version.sh ]]; then
-            mkdir -p scripts
-            # Pull canonical script from wave-moq-edge (the reference impl)
-            curl -fsSL -o scripts/check-moq-draft-version.sh \
-              https://raw.githubusercontent.com/wave-av/wave-moq-edge/main/scripts/check-moq-draft-version.sh
-            chmod +x scripts/check-moq-draft-version.sh
+          set -euo pipefail
+          if [[ -f scripts/check-moq-draft-version.sh ]]; then
+            echo "Using the vendored scripts/check-moq-draft-version.sh — nothing fetched."
+            exit 0
           fi
+          mkdir -p scripts
+          curl -fsSL --proto '=https' --tlsv1.2 \
+            -o scripts/check-moq-draft-version.sh \
+            "https://raw.githubusercontent.com/wave-av/wave-moq-edge/${SCRIPT_COMMIT}/scripts/check-moq-draft-version.sh"
+          echo "${SCRIPT_SHA256}  scripts/check-moq-draft-version.sh" | sha256sum -c -
+          chmod +x scripts/check-moq-draft-version.sh
 
       - name: Run drift check
         run: bash scripts/check-moq-draft-version.sh --ci
