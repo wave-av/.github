@@ -286,17 +286,28 @@ jobs:
           EXCLUDE_REPO: ${{ vars.HYGIENE_EXCLUDE_REPOS }}
         run: |
           set -euo pipefail
-          added=0; capped="no"; after=""; page=0
+          added=0; capped="no"; after=""; page=0; walked=0; declared=-1
           # excluded repo is injected via a repo variable so its (private) name stays out of this public source
           excl=""; [ -n "${EXCLUDE_REPO:-}" ] && excl="-repo:$EXCLUDE_REPO"
           while : ; do
             page=$((page+1)); [ "$page" -le 20 ] || break
             resp="$(gh api graphql -f query='
               query($q:String!,$after:String){ search(query:$q, type:ISSUE, first:100, after:$after){
+                issueCount
                 pageInfo{ hasNextPage endCursor }
                 nodes{ ... on Issue { id number repository{ nameWithOwner }
                   projectItems(first:10){ nodes{ project{ id } } } } } } }' \
               -F q="org:wave-av is:issue is:open $excl" ${after:+-F after="$after"})"
+            # GitHub's search API hard-caps at 1000 RESULTS however the caller paginates: past that
+            # `hasNextPage` simply goes false. No error, no warning — and the step's normal
+            # termination condition is that same false, so a truncated run is indistinguishable
+            # from "everything is already on the board". Measured 2026-08-04, this query returned
+            # 951 of a possible 1000.
+            #
+            # `issueCount` is the TRUE total and rides on every page, so the invariant is free:
+            # walk to the end, then assert we saw as many as the API said existed.
+            [ "$declared" -ge 0 ] || declared="$(jq -r '.data.search.issueCount' <<<"$resp")"
+            walked=$(( walked + $(jq -r '.data.search.nodes | length' <<<"$resp") ))
             echo "$resp" | jq -c --arg pid "$PROJECT_ID" '.data.search.nodes[]
               | select(([.projectItems.nodes[].project.id] | index($pid)) == null)
               | { id:.id, num:.number, repo:.repository.nameWithOwner }' > candidates.jsonl || true
@@ -318,6 +329,18 @@ jobs:
             [ "$hasNext" = "true" ] || break
           done
           if [ "$capped" = "yes" ]; then
-            echo "capped — more may remain beyond this run's 200-add limit"
+            # Was a bare stdout line in a log nobody reads. An annotation is the point: this is a
+            # partial run, and the summary's "Auto-added N" reads as complete without it.
+            echo "::warning title=auto-add hit its 200-per-run limit::more off-board issues may remain; they wait for the next scheduled run."
           fi
-          echo "Auto-added **$added** non-WSC issue(s) to the board (capped: $capped)." >> "$GITHUB_STEP_SUMMARY"
+          # The truncation assert. `declared` stays -1 only if the very first query failed to
+          # return a count, which is itself worth saying rather than silently skipping the check.
+          if [ "$declared" -lt 0 ]; then
+            echo "::warning title=auto-add could not read issueCount::the search-truncation check did not run, so this run's coverage is unverified."
+          elif [ "$walked" -lt "$declared" ]; then
+            echo "::warning title=auto-add search TRUNCATED::walked $walked of $declared matching issue(s) — GitHub caps search at 1000 results regardless of pagination. Issues beyond the cap were never examined and NOTHING will add them to the board. Shard the query (by repo, or by created: window)."
+          fi
+          {
+            echo "Auto-added **$added** non-WSC issue(s) to the board (200-per-run limit hit: $capped)."
+            echo "Search coverage: examined **$walked** of **$declared** matching issue(s)."
+          } >> "$GITHUB_STEP_SUMMARY"
