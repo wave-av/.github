@@ -114,11 +114,66 @@ jobs:
         run: |
           set -euo pipefail
           missing=0; after=""; page=0
-          # ensure the label exists (idempotent)
-          gh label create needs-triage -R "$GITHUB_REPOSITORY" -c "#D93F0B" \
-            -d "On the board but missing Type/Area/Priority" 2>/dev/null || true
+          classified=0; unlabeled=0; failed=0; truncated=0; standing=0
+          : > label-failures.txt
+          # Repos whose `needs-triage` label we have already ensured this run. `gh issue edit
+          # --add-label` fails outright if the label does not exist IN THE TARGET REPO, and the
+          # board spans 130+ repos — so ensuring it once in $GITHUB_REPOSITORY (this repo) covered
+          # exactly the one repo the sweep almost never writes to.
+          ensured_repos=" "
+
+          # Every label write goes through here. The previous form was
+          #   gh issue edit ... >/dev/null 2>&1 || true
+          # followed by an unconditional counter bump, which made "labelled 108 items" and
+          # "attempted 108 and every one was rejected" print the same summary line. That is the
+          # exact failure this sweep exists to detect, running inside the detector: 108 open
+          # claude-workstation board items were selected for labelling every day and their issue
+          # timelines carry no `needs-triage` event at all, while the job reported success.
+          #
+          # $repo/$num are third-party values from the API and are passed ONLY as argv to `gh`,
+          # never spliced into a shell string. Captured stderr is stripped of control characters
+          # and truncated before it is echoed, because it can quote issue/repo text.
+          # Returns 0 on success; on failure records the reason and returns 1 WITHOUT tripping
+          # `set -e` at the call site (callers test the return value).
+          edit_label() {  # $1=repo  $2=num  $3=--add-label|--remove-label
+            _r="$1"; _n="$2"; _op="$3"; _rc=0
+            case "$ensured_repos" in
+              *" $_r "*) : ;;
+              *)
+                gh label create needs-triage -R "$_r" -c "#D93F0B" \
+                  -d "On the board but missing Type/Area/Priority" >/dev/null 2>&1 || true
+                ensured_repos="${ensured_repos}${_r} "
+                ;;
+            esac
+            # Bounded retry: GitHub secondary rate limits reject content-mutating writes with 403
+            # once a burst exceeds ~80/min, and this loop can issue several hundred back to back.
+            for _try in 1 2 3; do
+              if gh issue edit "$_n" -R "$_r" "$_op" needs-triage >/dev/null 2>edit.err; then
+                _rc=0; break
+              fi
+              _rc=1
+              # Only a rate-limit rejection is worth retrying; a 404/permission error will fail
+              # identically three times. Do not sleep after the final attempt — that backoff
+              # would be paid immediately before giving up.
+              grep -qiE 'rate limit|secondary|abuse' edit.err || break
+              # NB: an `if`, not `[ ... ] && sleep`. Under `set -e` that one-liner returns 1 on the
+              # final attempt and would kill the whole step at the exact moment it is handling a
+              # failure — the sweep would die instead of reporting.
+              if [ "$_try" -lt 3 ]; then sleep $(( _try * 20 )); fi
+            done
+            if [ "$_rc" -ne 0 ]; then
+              failed=$((failed+1))
+              printf '%s#%s %s: %s\n' "$_r" "$_n" "$_op" \
+                "$(tr -d '\000-\037' < edit.err | cut -c1-160)" >> label-failures.txt
+            fi
+            # A small pace between writes costs a few minutes on the backfill and keeps the steady
+            # state well under the secondary limit.
+            sleep 0.4
+            return "$_rc"
+          }
           while : ; do
-            page=$((page+1)); [ "$page" -le 20 ] || break
+            page=$((page+1))
+            if [ "$page" -gt 20 ]; then truncated=1; break; fi
             resp="$(gh api graphql -f query='
               query($p:ID!,$after:String){ node(id:$p){ ... on ProjectV2 {
                 items(first:100,after:$after){ pageInfo{ hasNextPage endCursor }
@@ -154,18 +209,19 @@ jobs:
                 -F p="$PROJECT_ID" -F i="$1" -F f="$2" -F o="$3" >/dev/null
             }
 
-            classified=0; unlabeled=0
             while IFS= read -r row; do
               [ -n "$row" ] || continue
               repo="$(jq -r .repo <<<"$row")"; num="$(jq -r .num <<<"$row")"
               itemId="$(jq -r .itemId <<<"$row")"; login="$(jq -r .author <<<"$row")"
               area="$(jq -r .area <<<"$row")"; prio="$(jq -r .prio <<<"$row")"
+              hasTriage="$(jq -r .hasTriage <<<"$row")"
 
               # Fully fielded but still carrying a stale needs-triage label (from before it was
               # completed) — strip the label so the Triage-health chart stops overcounting.
               if [ "$area" != "null" ] && [ "$prio" != "null" ]; then
-                gh issue edit "$num" -R "$repo" --remove-label needs-triage >/dev/null 2>&1 || true
-                unlabeled=$((unlabeled+1))
+                if edit_label "$repo" "$num" --remove-label; then
+                  unlabeled=$((unlabeled+1))
+                fi
                 continue
               fi
 
@@ -180,17 +236,49 @@ jobs:
                   fi
                 done
                 classified=$((classified+1))
+              elif [ "$hasTriage" = "true" ]; then
+                # Already flagged and still under-fielded — nothing to write. Counted separately
+                # so the summary distinguishes "this sweep flagged N" from "N are standing
+                # backlog being recounted"; the old `missing` conflated the two.
+                standing=$((standing+1))
               else
-                gh issue edit "$num" -R "$repo" --add-label needs-triage >/dev/null 2>&1 || true
-                missing=$((missing+1))
+                if edit_label "$repo" "$num" --add-label; then
+                  missing=$((missing+1))
+                fi
               fi
             done < flagged.jsonl
             hasNext="$(jq -r '.data.node.items.pageInfo.hasNextPage' <<<"$resp")"
             after="$(jq -r '.data.node.items.pageInfo.endCursor' <<<"$resp")"
             [ "$hasNext" = "true" ] || break
           done
-          echo "### Triage-health sweep" >> "$GITHUB_STEP_SUMMARY"
-          echo "Flagged **$missing** open board item(s) missing Area or Priority as \`needs-triage\`; auto-classified **$classified** known-bot item(s); cleared the stale label from **$unlabeled** now-fully-fielded item(s)." >> "$GITHUB_STEP_SUMMARY"
+          # Every number below is a count of writes that RETURNED SUCCESS, not of writes attempted.
+          {
+            echo "### Triage-health sweep"
+            echo "Newly flagged **$missing** open board item(s) missing Area or Priority as \`needs-triage\`; **$standing** were already flagged and remain under-fielded; auto-classified **$classified** known-bot item(s); cleared the stale label from **$unlabeled** now-fully-fielded item(s)."
+            echo "Label writes that FAILED: **$failed**."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$truncated" -eq 1 ]; then
+            echo "::warning title=ticket-hygiene sweep TRUNCATED::the 20-page cap (2000 board items) was reached while more pages remained — items beyond it were never examined. Raise the cap or the sweep is silently partial."
+            echo "> ⚠️ **Truncated** at the 20-page cap; items beyond 2000 were never examined." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          if [ "$failed" -gt 0 ]; then
+            # Loud, and non-zero. A sweep that could not write is NOT a sweep that found nothing
+            # to do — keeping those two apart is the whole point of this job.
+            echo "::error title=ticket-hygiene label writes FAILED::$failed label write(s) were rejected; the board's needs-triage state is NOT what this run reports."
+            {
+              echo ""
+              echo "<details><summary>First 20 label-write failures</summary>"
+              echo ""
+              echo '```'
+              head -n 20 label-failures.txt
+              echo '```'
+              echo ""
+              echo "</details>"
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
 
       - name: Auto-add non-WSC issues to the board
         env:
@@ -198,17 +286,28 @@ jobs:
           EXCLUDE_REPO: ${{ vars.HYGIENE_EXCLUDE_REPOS }}
         run: |
           set -euo pipefail
-          added=0; capped="no"; after=""; page=0
+          added=0; capped="no"; after=""; page=0; walked=0; declared=-1
           # excluded repo is injected via a repo variable so its (private) name stays out of this public source
           excl=""; [ -n "${EXCLUDE_REPO:-}" ] && excl="-repo:$EXCLUDE_REPO"
           while : ; do
             page=$((page+1)); [ "$page" -le 20 ] || break
             resp="$(gh api graphql -f query='
               query($q:String!,$after:String){ search(query:$q, type:ISSUE, first:100, after:$after){
+                issueCount
                 pageInfo{ hasNextPage endCursor }
                 nodes{ ... on Issue { id number repository{ nameWithOwner }
                   projectItems(first:10){ nodes{ project{ id } } } } } } }' \
               -F q="org:wave-av is:issue is:open $excl" ${after:+-F after="$after"})"
+            # GitHub's search API hard-caps at 1000 RESULTS however the caller paginates: past that
+            # `hasNextPage` simply goes false. No error, no warning — and the step's normal
+            # termination condition is that same false, so a truncated run is indistinguishable
+            # from "everything is already on the board". Measured 2026-08-04, this query returned
+            # 951 of a possible 1000.
+            #
+            # `issueCount` is the TRUE total and rides on every page, so the invariant is free:
+            # walk to the end, then assert we saw as many as the API said existed.
+            [ "$declared" -ge 0 ] || declared="$(jq -r '.data.search.issueCount' <<<"$resp")"
+            walked=$(( walked + $(jq -r '.data.search.nodes | length' <<<"$resp") ))
             echo "$resp" | jq -c --arg pid "$PROJECT_ID" '.data.search.nodes[]
               | select(([.projectItems.nodes[].project.id] | index($pid)) == null)
               | { id:.id, num:.number, repo:.repository.nameWithOwner }' > candidates.jsonl || true
@@ -230,6 +329,18 @@ jobs:
             [ "$hasNext" = "true" ] || break
           done
           if [ "$capped" = "yes" ]; then
-            echo "capped — more may remain beyond this run's 200-add limit"
+            # Was a bare stdout line in a log nobody reads. An annotation is the point: this is a
+            # partial run, and the summary's "Auto-added N" reads as complete without it.
+            echo "::warning title=auto-add hit its 200-per-run limit::more off-board issues may remain; they wait for the next scheduled run."
           fi
-          echo "Auto-added **$added** non-WSC issue(s) to the board (capped: $capped)." >> "$GITHUB_STEP_SUMMARY"
+          # The truncation assert. `declared` stays -1 only if the very first query failed to
+          # return a count, which is itself worth saying rather than silently skipping the check.
+          if [ "$declared" -lt 0 ]; then
+            echo "::warning title=auto-add could not read issueCount::the search-truncation check did not run, so this run's coverage is unverified."
+          elif [ "$walked" -lt "$declared" ]; then
+            echo "::warning title=auto-add search TRUNCATED::walked $walked of $declared matching issue(s) — GitHub caps search at 1000 results regardless of pagination. Issues beyond the cap were never examined and NOTHING will add them to the board. Shard the query (by repo, or by created: window)."
+          fi
+          {
+            echo "Auto-added **$added** non-WSC issue(s) to the board (200-per-run limit hit: $capped)."
+            echo "Search coverage: examined **$walked** of **$declared** matching issue(s)."
+          } >> "$GITHUB_STEP_SUMMARY"
