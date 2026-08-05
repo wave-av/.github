@@ -20,6 +20,9 @@ Like Stripe is for payments and Resend is for email — **WAVE is for audio and 
 | [`@wave-av/sdk`](https://github.com/wave-av/sdk) | TypeScript SDK — 34 API modules | [![npm](https://img.shields.io/npm/v/@wave-av/sdk.svg)](https://www.npmjs.com/package/@wave-av/sdk) |
 | [`@wave-av/adk`](https://github.com/wave-av/adk) | Agent Developer Kit — MCP tools + agent templates | [![npm](https://img.shields.io/npm/v/@wave-av/adk.svg)](https://www.npmjs.com/package/@wave-av/adk) |
 | [`@wave-av/mcp-server`](https://github.com/wave-av/mcp-server) | MCP server for Claude, Cursor, and Windsurf | [![npm](https://img.shields.io/npm/v/@wave-av/mcp-server.svg)](https://www.npmjs.com/package/@wave-av/mcp-server) |
+| [`@wave-av/cli`](https://github.com/wave-av/cli) | Command-line interface for the WAVE streaming platform | [![npm](https://img.shields.io/npm/v/@wave-av/cli.svg)](https://www.npmjs.com/package/@wave-av/cli) |
+| [`@wave-av/workflow-sdk`](https://github.com/wave-av/workflow-sdk) | Build and execute workflows on the WAVE platform | [![npm](https://img.shields.io/npm/v/@wave-av/workflow-sdk.svg)](https://www.npmjs.com/package/@wave-av/workflow-sdk) |
+| [`@wave-av/dispatch`](https://github.com/wave-av/dispatch-edge) | Local-first AI routing — edge worker + client SDKs | [![npm](https://img.shields.io/npm/v/@wave-av/dispatch.svg)](https://www.npmjs.com/package/@wave-av/dispatch) |
 
 Python developers: [`wave-sdk`](https://github.com/wave-av/sdk-python) on PyPI.
 
