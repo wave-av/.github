@@ -18,8 +18,9 @@
 # Exit: 0 clean · 1 blocking violation · 2 scanner error (fail closed).
 #
 # Allowlisting: a line carrying `guard:allow <reason>` is exempt (an accidental
-# leak never carries the marker; a deliberate one is visible in a public diff), as
-# is any line matching the ABOUT-THE-CONTROL allowlist below.
+# leak never carries the marker; a deliberate one is visible in a public diff).
+# PROSE rules additionally exempt lines matching the ABOUT-THE-CONTROL allowlist
+# below; credential-FORMAT rules never do — a real key is a leak on any line.
 set -uo pipefail
 
 FILE="${1:-}"
@@ -36,14 +37,21 @@ VIOLATIONS=0
 # the gate blocks its own pull requests and every security discussion — the
 # self-referential trap that gets a gate switched off. Ported verbatim in intent
 # from the client-side gate's allowlist, which was built for exactly this.
+#
+# Scope: PROSE rules only (the ones tagged `about-exempt` below). A credential-
+# FORMAT hit is a leak no matter what else the line says — a real key next to
+# the words "public-repo-guard" is still a real key — so for those rules the
+# only exemption is the explicit, visible `guard:allow <reason>` marker.
 ABOUT_THE_CONTROL='(public-repo-guard|body-policy|content-policy|public-github-write-gate|\bNDA\s+(gate|guard|policy|denylist|sweep|scan|hook)\b|\bno\s+NDA\b|responsib\w*\s+disclos|SECURITY\.md)'
 
-# check <BLOCK|WARN> <name> <regex> <why>
+# check <BLOCK|WARN> <name> <regex> <why> [about-exempt]
 check() {
-  local sev="$1" name="$2" re="$3" why="$4"
+  local sev="$1" name="$2" re="$3" why="$4" scope="${5:-}"
   [[ -z "$re" ]] && { echo "::error::body-policy: internal bug — empty regex for rule '$name'"; exit 2; }
   # rg exit: 0=match, 1=no match, >=2=real error → FAIL CLOSED. A gate that passes
-  # because its scanner broke is worse than no gate: it reports success.
+  # because its scanner broke is worse than no gate: it reports success. The same
+  # contract applies to every FILTER stage below: exit 1 ("nothing left") is a
+  # normal outcome, exit >=2 must never be read as "no matches".
   local raw rc
   raw="$(rg -nP --no-filename -- "$re" "$FILE" 2>/dev/null)"; rc=$?
   if (( rc >= 2 )); then
@@ -54,9 +62,18 @@ check() {
   # silently errors out locally while working on GNU/CI — the gate would then
   # disagree with itself depending on where it ran. rg is already required above.
   local matches
-  matches="$(printf '%s' "$raw" \
-    | rg -vN -- 'guard:allow[[:space:]]+[^[:space:]]' \
-    | rg -vNiP -- "$ABOUT_THE_CONTROL" || true)"
+  matches="$(printf '%s' "$raw" | rg -vN -- 'guard:allow[[:space:]]+[^[:space:]]')"; rc=$?
+  if (( rc >= 2 )); then
+    echo "::error title=public-repo-guard ($name)::ripgrep failed (exit $rc) applying the guard:allow filter for rule '$name' — failing closed."
+    exit 2
+  fi
+  if [[ "$scope" == "about-exempt" ]]; then
+    matches="$(printf '%s' "$matches" | rg -vNiP -- "$ABOUT_THE_CONTROL")"; rc=$?
+    if (( rc >= 2 )); then
+      echo "::error title=public-repo-guard ($name)::ripgrep failed (exit $rc) applying the about-the-control filter for rule '$name' — failing closed."
+      exit 2
+    fi
+  fi
   [[ -z "$matches" ]] && return 0
   local count; count="$(printf '%s\n' "$matches" | grep -c '')"
   # Print the LINE NUMBER only — never the matched text. This annotation is itself
@@ -101,7 +118,7 @@ check BLOCK abs-user-path    '/(Users|home)/(?!runner/)[a-z][a-z0-9._-]+/'    'O
 # A quoted marker is also a trivial bypass, and that is an accepted trade. The
 # threat here is the ACCIDENTAL paste; a deliberate evader has easier routes, and
 # `guard:allow <reason>` already exists as the honest, visible one.
-check BLOCK internal-marker  '(?<![“"'"'"'`])\b(internal[- ]only|do\s+not\s+(share|publish|distribute)|for\s+internal\s+use)\b(?![”"'"'"'`])' 'Text self-identifies as not-for-public'
+check BLOCK internal-marker  '(?<![“"'"'"'`])\b(internal[- ]only|do\s+not\s+(share|publish|distribute)|for\s+internal\s+use)\b(?![”"'"'"'`])' 'Text self-identifies as not-for-public' about-exempt
 
 # --- Private repo + operational detail (PROXIMITY, not bare name) ------------
 # The BODY profile deliberately DIVERGES from the FILE profile here, and the
@@ -135,7 +152,8 @@ if [[ -n "${GUARD_PRIVATE_REPOS:-}" ]]; then
     # everyday lowercase prose like "api_key", blocking legitimate bodies.
     check BLOCK private-repo-ops \
       "\\b(?i:${_ALT})\\b[^\\n]{0,140}?\\b${OPS_DETAIL}|${OPS_DETAIL}[^\\n]{0,140}?\\b(?i:${_ALT})\\b" \
-      'A private WAVE repo named alongside internal operational detail (credential name, secret binding, or secret count) — the wiring topology is not public'
+      'A private WAVE repo named alongside internal operational detail (credential name, secret binding, or secret count) — the wiring topology is not public' \
+      about-exempt
   fi
 fi
 

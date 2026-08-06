@@ -59,6 +59,10 @@ expect 1 'AWS access key id' \
   "The failing job had ${AKID_FIXTURE} configured."
 expect 1 'internal tailscale IP' \
   'It resolves to 100.71.4.19 from inside the fleet.'
+# Regression: the about-the-control allowlist once applied to EVERY rule, so a
+# credential-shaped hit vanished if the same line happened to name the gate.
+expect 1 'credential leak is NOT exempted by naming the control' \
+  "public-repo-guard missed this: ${AKID_FIXTURE} showed up in the logs — see SECURITY.md."
 
 # --- must PASS (precision — these keep the gate deployable) -------------------
 expect 0 'bare private-repo cross-reference' \
