@@ -91,6 +91,19 @@ jobs:
       - name: Install ripgrep
         run: command -v rg >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq ripgrep)
 
+      # Deliberately the PR's OWN copy of the policy, and the asymmetry with the
+      # body workflow's trusted-base checkout is intentional, not an oversight.
+      # Two reasons. First, pinning to base removes no attacker capability here:
+      # on pull_request events the workflow DEFINITION itself executes from the
+      # PR merge ref, so a PR that could gut content-policy.sh could as easily
+      # rewrite this file into a no-op job with the same required-check name.
+      # That vector is covered by review of gate-file diffs and by the push
+      # trigger, which re-scans main with main's own policy after merge. Second,
+      # unlike the body gate (which judges TEXT, so its policy version need not
+      # track the tree), this job judges THE TREE the policy ships in: a PR that
+      # legitimately updates the policy or its fixtures must be scanned and
+      # self-tested by the version it ships, or script and fixtures could never
+      # change together.
       - name: content policy (WAVE trade-secret / internal-leak gate)
         env:
           GUARD_PRIVATE_REPOS: ${{ vars.GUARD_PRIVATE_REPOS }}
