@@ -46,16 +46,26 @@ check is skipped when the variable is empty.
 **Allowlisting:** annotate a verified-safe line with `# guard:allow <reason>`, or
 add a path glob to a `.guardignore` at the repo root.
 
-**Install + enforce:** copy the five files the workflow's header lists —
-`public-repo-guard.yml` into `.github/workflows/`, plus `.gitleaks.toml`,
+**Install + enforce:** copy the six files the workflow's header lists —
+`public-repo-guard.yml` AND `public-repo-guard-body.yml` into
+`.github/workflows/`, plus `.gitleaks.toml`,
 `scripts/public-repo-guard/content-policy.sh`,
 `scripts/public-repo-guard/body-policy.sh`, and
 `scripts/public-repo-guard/tests/body-policy.test.sh` — then add BOTH check
 names, `public-repo-guard / Secrets + content policy` and
 `public-repo-guard / Body content policy`, to the branch's required status
-checks. The tree check alone does not gate body edits: on an `edited` event
-only the body job runs, so without the second required check a failing body
-scan leaves the PR mergeable.
+checks. The tree check alone does not gate body edits: those only trigger the
+body workflow, so without the second required check a failing body scan leaves
+the PR mergeable.
+
+The two workflow FILES are deliberate, not an accident of packaging. A job
+disabled by `if:` still publishes a check run with a non-failing `skipped`
+conclusion, and branch protection reads the latest check run per name — so if
+body events triggered the tree scan's file, a description edit or review
+comment would let a skipped tree job supersede a FAILING
+`Secrets + content policy` result on the same commit. Separate files mean a
+body event can never emit a check run for the tree context. Install both or
+neither; do not merge them back into one file.
 
 ## How to add a new template
 

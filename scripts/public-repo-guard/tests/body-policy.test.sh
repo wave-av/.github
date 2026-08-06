@@ -50,6 +50,10 @@ expect 1 'operator home path' \
   'Repro: run it from /Users/someoperator/Documents/notes and it fails.'  # enforce-ignore (fixture)
 expect 1 'internal-only marker' \
   'Attaching the internal-only rollout plan for context.'
+# Regression: the marker rule was once case-sensitive, so a capitalised banner —
+# the way these warnings are actually written — sailed through unflagged.
+expect 1 'internal-only marker, capitalised banner' \
+  'INTERNAL ONLY: Do Not Share outside the team.'
 # Assembled at run time rather than written as a literal: a fixture that LOOKS like
 # a live AWS key trips this repo's own pre-commit secret scanners (it did, on the
 # first draft). Splitting the prefix keeps the fixture exercising the real regex
@@ -91,6 +95,8 @@ expect 0 'marker MENTIONED in a code span' \
   'The rule matches `internal-only` and `for internal use` in body text.'
 expect 0 'marker MENTIONED in smart quotes' \
   'Blocks operator home paths and “internal-only” text.'
+expect 0 'capitalised marker MENTIONED in quotes is still a description' \
+  'The rule now also catches an "INTERNAL ONLY" banner regardless of case.'
 expect 1 'marker USED unquoted still blocks' \
   'Attaching the internal-only rollout plan; do not share outside the team.'
 
