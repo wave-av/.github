@@ -28,10 +28,10 @@ or use GitHub's "New workflow" UI and pick the WAVE template.
    live Stripe account IDs (`acct_…`), hardcoded Cloudflare `account_id`s,
    developer absolute paths (`/Users/…`), references to private WAVE repos, and
    committed `.env` files.
-3. **body-policy.sh** — the same leak classes in PR / issue / comment TEXT,
-   which is equally world-readable and was previously scanned by nothing
-   server-side. On a PR it blocks the merge; on an issue or comment it detects
-   so the text can be redacted fast.
+3. **body-policy.sh** — the same leak classes in PR / review / issue / comment
+   TEXT, which is equally world-readable and was previously scanned by nothing
+   server-side. On a PR it blocks the merge; on an issue, comment, or review it
+   detects so the text can be redacted fast.
 
 The config and the scripts are VENDORED into each repo alongside the workflow —
 they are NOT fetched at run time, so the gate is fully reviewable and cannot be
@@ -50,9 +50,12 @@ add a path glob to a `.guardignore` at the repo root.
 `public-repo-guard.yml` into `.github/workflows/`, plus `.gitleaks.toml`,
 `scripts/public-repo-guard/content-policy.sh`,
 `scripts/public-repo-guard/body-policy.sh`, and
-`scripts/public-repo-guard/tests/body-policy.test.sh` — then add
-`public-repo-guard / Secrets + content policy` to the branch's required status
-checks so it blocks merges.
+`scripts/public-repo-guard/tests/body-policy.test.sh` — then add BOTH check
+names, `public-repo-guard / Secrets + content policy` and
+`public-repo-guard / Body content policy`, to the branch's required status
+checks. The tree check alone does not gate body edits: on an `edited` event
+only the body job runs, so without the second required check a failing body
+scan leaves the PR mergeable.
 
 ## How to add a new template
 

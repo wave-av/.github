@@ -31,6 +31,13 @@ on:
   # PR is first raised, and until this workflow covered it, nothing ever re-scanned.
   pull_request:
     types: [opened, edited, reopened, synchronize]
+  # Review summaries and inline review comments are SEPARATE events (GitHub does
+  # not deliver either as `issue_comment`) and are just as world-readable, so
+  # without these two a reviewer could publish the same content unscanned.
+  pull_request_review:
+    types: [submitted, edited]
+  pull_request_review_comment:
+    types: [created, edited]
   issues:
     types: [opened, edited]
   issue_comment:
@@ -44,10 +51,16 @@ on:
 permissions:
   contents: read
 
-# Concurrency is per JOB, not per workflow: the two jobs want opposite behaviour.
-# A workflow-level group would force one policy on both, and it showed: rapid body
-# edits cancelled the tree job over and over, and every cancelled check-run stays
-# attached to the commit, so the PR reported UNSTABLE while the live runs were green.
+# Concurrency: only the tree job declares a group. The body job deliberately has
+# NONE: a concurrency group holds at most one PENDING run, so under a burst of
+# edits the queued scans in between get cancelled even with cancel-in-progress
+# false, and those body versions never receive a verdict. The body job is seconds
+# long; letting every event run to completion is the cheap, correct option. The
+# tree job keeps a cancelling group (a push supersedes the tree), and history
+# shows why the body side must not share it: when the group was workflow-level,
+# rapid body edits cancelled the tree job over and over, and every cancelled
+# check-run stays attached to the commit, so the PR reported UNSTABLE while the
+# live runs were green.
 
 jobs:
   guard:
@@ -102,8 +115,8 @@ jobs:
         run: bash scripts/public-repo-guard/tests/body-policy.test.sh
 
   # The other half of a public repo's surface. `guard` above scans the published
-  # TREE; a PR/issue/comment BODY is just as world-readable and, until this job,
-  # was scanned by nothing server-side. That gap was real, not theoretical: a PR
+  # TREE; a PR/review/issue/comment BODY is just as world-readable and, until this
+  # job, was scanned by nothing server-side. That gap was real, not theoretical: a PR
   # was blocked for naming a private repo in wrangler.toml while the very same
   # name, with more operational detail attached, sat unchallenged in its body.
   #
@@ -113,23 +126,38 @@ jobs:
   # can stop that class before publication.
   body-guard:
     name: Body content policy
-    if: github.event_name == 'pull_request' || github.event_name == 'issues' || github.event_name == 'issue_comment'
-    concurrency:
-      # Keyed on the specific PR / comment / issue rather than github.ref, because
-      # issue events all report the default branch and a ref-keyed group would let
-      # two comments cancel each other, leaving one unscanned.
-      #
-      # cancel-in-progress is deliberately FALSE. Every version of a body deserves a
-      # verdict, the job is seconds long, and a cancelled check-run lingers on the
-      # commit and makes an otherwise-green PR look broken.
-      group: public-repo-guard-body-${{ github.event.pull_request.number || github.event.comment.id || github.event.issue.number || github.ref }}
-      cancel-in-progress: false
+    # No concurrency group here, deliberately: see the note above the jobs block.
+    if: >-
+      github.event_name == 'pull_request'
+      || github.event_name == 'pull_request_review'
+      || github.event_name == 'pull_request_review_comment'
+      || github.event_name == 'issues'
+      || github.event_name == 'issue_comment'
     runs-on: ubuntu-latest
     steps:
+      # TRUSTED policy, not the PR's. On pull_request-family events the default
+      # checkout is the PR merge ref, so the gate would execute whatever
+      # body-policy.sh the PR itself ships: a contributor could edit it to exit 0
+      # (or to read what CI hands it) and this check would still report green.
+      # Pinning the checkout to the BASE revision means the PR under scan can
+      # never define the policy that judges it.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
-          # Only the gate's own scripts are needed — no reason to pay for the whole
+          ref: ${{ github.event.pull_request.base.sha || github.sha }}
+          path: trusted
+          # Only the gate's own scripts are needed; no reason to pay for the whole
           # tree on every comment.
+          sparse-checkout: scripts/public-repo-guard
+          sparse-checkout-cone-mode: false
+
+      # The PR's own copy, consulted in exactly ONE case: the base revision has no
+      # body policy yet, i.e. the PR that INSTALLS the gate. In an installed repo
+      # the base always has the script, so a hostile PR cannot reach this fallback
+      # by deleting or editing its copy; the trusted checkout above still wins.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        if: startsWith(github.event_name, 'pull_request')
+        with:
+          path: incoming
           sparse-checkout: scripts/public-repo-guard
           sparse-checkout-cone-mode: false
 
@@ -147,25 +175,32 @@ jobs:
           # An UNRECOGNIZED payload shape must fail, never quietly scan nothing and
           # report a pass. If the event schema ever moves, this job must go red
           # rather than become a green rubber stamp over an unscanned body.
-          if [ "$(jq -r 'has("pull_request") or has("issue") or has("comment")' "$GITHUB_EVENT_PATH")" != "true" ]; then
-            echo "::error title=public-repo-guard (body-guard)::Event payload contains no pull_request/issue/comment object — refusing to report a pass on an unscanned body."
+          if [ "$(jq -r 'has("pull_request") or has("issue") or has("comment") or has("review")' "$GITHUB_EVENT_PATH")" != "true" ]; then
+            echo "::error title=public-repo-guard (body-guard)::Event payload contains no pull_request/issue/comment/review object — refusing to report a pass on an unscanned body."
             exit 1
           fi
           jq -r '[.pull_request.title, .pull_request.body,
+                  .review.body,
                   .issue.title, .issue.body,
                   .comment.body]
                  | map(select(. != null)) | join("\n")' \
             "$GITHUB_EVENT_PATH" > "$RUNNER_TEMP/bodyscan/body.txt"
           echo "scanning $(wc -l < "$RUNNER_TEMP/bodyscan/body.txt") line(s) of body text"
 
-      - name: body policy (PR / issue / comment text)
+      - name: body policy (PR / issue / comment / review text)
         env:
           GUARD_PRIVATE_REPOS: ${{ vars.GUARD_PRIVATE_REPOS }}
         # The existence assertion turns "the sparse checkout resolved to nothing"
         # into a named failure instead of bash's opaque "No such file or directory".
         run: |
-          if [ ! -f scripts/public-repo-guard/body-policy.sh ]; then
-            echo "::error title=public-repo-guard (body-guard)::body-policy.sh missing from the sparse checkout — failing closed."
-            exit 2
+          POLICY="trusted/scripts/public-repo-guard/body-policy.sh"
+          if [ ! -f "$POLICY" ]; then
+            if [ -f "incoming/scripts/public-repo-guard/body-policy.sh" ]; then
+              echo "::warning title=public-repo-guard (body-guard)::base revision has no body policy; running the copy this PR installs. Tamper protection begins once it merges."
+              POLICY="incoming/scripts/public-repo-guard/body-policy.sh"
+            else
+              echo "::error title=public-repo-guard (body-guard)::body-policy.sh missing from the trusted checkout; failing closed."
+              exit 2
+            fi
           fi
-          bash scripts/public-repo-guard/body-policy.sh "$RUNNER_TEMP/bodyscan/body.txt"
+          bash "$POLICY" "$RUNNER_TEMP/bodyscan/body.txt"
