@@ -26,6 +26,17 @@ name: public-repo-guard
 # detection — it tells us to go redact, fast. Only the client-side pre-write hook
 # can stop that class before publication.
 #
+# WHERE a detection verdict lands is a side effect worth stating so nobody
+# rediscovers it as a bug: only pull_request events attach the check run to the
+# PR head SHA (the only place branch protection reads it). On `issues` and
+# `issue_comment` events GITHUB_SHA is the DEFAULT-BRANCH head, so a failing
+# scan pins a red `Body content policy` check run to the tip of main; review
+# events pin it to the PR merge commit. Accepted, not accidental: detection has
+# no merge to block, and with only a read token a red check on main is the
+# loudest alarm this job can raise. Anything that reads main's combined status
+# (release gating, merge queues) will see that red until a later body event
+# passes under the same context — treat that as the alarm working, and redact.
+#
 # To install on a new repo, copy all six files together (list in the tree
 # workflow's header).
 
