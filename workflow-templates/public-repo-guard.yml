@@ -179,10 +179,17 @@ jobs:
             echo "::error title=public-repo-guard (body-guard)::Event payload contains no pull_request/issue/comment/review object — refusing to report a pass on an unscanned body."
             exit 1
           fi
-          jq -r '[.pull_request.title, .pull_request.body,
-                  .review.body,
-                  .issue.title, .issue.body,
-                  .comment.body]
+          # Scan WHAT THIS EVENT CHANGED, not the whole thread. Each surface gets
+          # its own verdict on its own event (a PR/issue body on opened/edited, a
+          # review on submitted/edited, a comment on created/edited). Folding the
+          # parent body into every comment scan would let one bad, unedited body
+          # keep every later comment red regardless of its content — exactly the
+          # permanent-noise failure mode that gets a gate switched off.
+          jq -r 'if has("comment") then [.comment.body]
+                 elif has("review") then [.review.body]
+                 elif has("pull_request") then [.pull_request.title, .pull_request.body]
+                 else [.issue.title, .issue.body]
+                 end
                  | map(select(. != null)) | join("\n")' \
             "$GITHUB_EVENT_PATH" > "$RUNNER_TEMP/bodyscan/body.txt"
           echo "scanning $(wc -l < "$RUNNER_TEMP/bodyscan/body.txt") line(s) of body text"
