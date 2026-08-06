@@ -25,6 +25,10 @@ set -uo pipefail
 FILE="${1:-}"
 [[ -n "$FILE" && -f "$FILE" ]] || { echo "::error::body-policy: usage: body-policy.sh <file>"; exit 2; }
 command -v rg >/dev/null 2>&1 || { echo "::error::body-policy: ripgrep (rg) required"; exit 2; }
+# Every rule below uses -P (PCRE2), and not every distro ships rg with it built
+# in. Probe once up front so a PCRE2-less build fails with ONE clear message
+# instead of an opaque "ripgrep failed (exit 2)" on every rule.
+rg --pcre2-version >/dev/null 2>&1 || { echo "::error::body-policy: this ripgrep build lacks PCRE2 (-P) support — failing closed"; exit 2; }
 
 VIOLATIONS=0
 
@@ -125,9 +129,12 @@ if [[ -n "${GUARD_PRIVATE_REPOS:-}" ]]; then
     _ALT="${_ALT:+$_ALT|}${_esc}"
   done
   if [[ -n "$_ALT" ]]; then
-    # Both orders: name-then-detail and detail-then-name.
+    # Both orders: name-then-detail and detail-then-name. Case-insensitivity is
+    # scoped to the repo-NAME alternation only — a bare `(?i)` prefix would bleed
+    # into OPS_DETAIL and make its SCREAMING_CASE credential pattern match
+    # everyday lowercase prose like "api_key", blocking legitimate bodies.
     check BLOCK private-repo-ops \
-      "(?i)\\b(?:${_ALT})\\b[^\\n]{0,140}?\\b${OPS_DETAIL}|${OPS_DETAIL}[^\\n]{0,140}?\\b(?:${_ALT})\\b" \
+      "\\b(?i:${_ALT})\\b[^\\n]{0,140}?\\b${OPS_DETAIL}|${OPS_DETAIL}[^\\n]{0,140}?\\b(?i:${_ALT})\\b" \
       'A private WAVE repo named alongside internal operational detail (credential name, secret binding, or secret count) — the wiring topology is not public'
   fi
 fi
