@@ -47,6 +47,11 @@ expect 1 'private repo + credential name' \
   'Flip is live: WAVE_VIEWPORT_LEASE_SECRET is bound on fixture-repo-alpha now.'
 expect 1 'private repo + credential name, reverse order' \
   'The MOQ_JOIN_SECRET was added; fixture-repo-beta picks it up on deploy.'
+# Regression: the credential-name class once excluded `_`, so `\b` could only
+# anchor mid-identifier (before `LEASE_SECRET`, right after a `_` — never a word
+# boundary) and the name-then-detail order sailed through unflagged.
+expect 1 'private repo THEN multi-segment credential name' \
+  'fixture-repo-alpha now stores WAVE_VIEWPORT_LEASE_SECRET.'
 expect 1 'private repo + secret count' \
   'fixture-repo-alpha went from 74 secrets to 75 after this change.'
 expect 1 'private repo + service binding' \
@@ -88,6 +93,14 @@ expect 0 'public runner path is not an operator path' \
   'CI checks out to /home/runner/work/repo/repo before the scan runs.'  # enforce-ignore (fixture)
 expect 0 'talking about the control' \
   'body-policy blocks a private repo named next to a SECRET_TOKEN; that is intended.'
+# Pins the DELIBERATE trade for the proximity rule: it is about-exempt, so a line
+# that names the gate is dropped even when it also carries a private repo name
+# next to a credential name. Without this the gate blocks its own PRs — every
+# body describing the rule has to write exactly this shape. The exemption is
+# line-scoped; the same leak on a line that does NOT name a control still blocks
+# (the fixtures above prove that half).
+expect 0 'proximity hit on a line naming the control is exempt' \
+  'body-policy should flag fixture-repo-alpha next to WAVE_VIEWPORT_LEASE_SECRET.'
 expect 0 'explicit guard:allow with a reason' \
   'Example for the docs: fixture-repo-alpha holds EXAMPLE_SECRET — guard:allow documented-example'
 expect 0 'ordinary clean body' \

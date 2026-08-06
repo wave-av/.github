@@ -140,7 +140,12 @@ check BLOCK internal-marker  '(?i)(?<![“"'"'"'`])\b(internal[- ]only|do\s+not\
 # Names are NOT hardcoded (this file is public); CI injects them via the
 # GUARD_PRIVATE_REPOS variable. Unset locally → this check is skipped.
 if [[ -n "${GUARD_PRIVATE_REPOS:-}" ]]; then
-  OPS_DETAIL='(?:[A-Z][A-Z0-9]*_(?:SECRET|TOKEN|KEY|PASSWORD)|wrangler\s+secret|secret\s+(?:is\s+)?(?:bound|binding|list)|(?:is\s+)?bound\s+on|service\s+binding|\d{2,}\s+secrets)'
+  # The credential-name class allows `_` so the whole multi-segment identifier
+  # matches as ONE token. With `[A-Z0-9]*` only the final `LEASE_SECRET` of
+  # `WAVE_VIEWPORT_LEASE_SECRET` could match, and its start sits right after a
+  # `_` (a word character) — so the `\b` prepended in the name-then-detail
+  # alternative below could NEVER be satisfied, silently passing that order.
+  OPS_DETAIL='(?:[A-Z][A-Z0-9_]*_(?:SECRET|TOKEN|KEY|PASSWORD)|wrangler\s+secret|secret\s+(?:is\s+)?(?:bound|binding|list)|(?:is\s+)?bound\s+on|service\s+binding|\d{2,}\s+secrets)'
   _ALT=''
   IFS=', ' read -r -a _PRIV <<< "$GUARD_PRIVATE_REPOS"
   for _name in "${_PRIV[@]}"; do
