@@ -102,6 +102,14 @@ expect 0 'private repo and credential name in separate paragraphs' \
   'Companion change to fixture-repo-alpha#41; merge that one first.
 
 Unrelated: WAVE_VIEWPORT_LEASE_SECRET is now read from the env template.'
+# Regression: the paragraph-break lookahead once padded with [ \t] only, so a
+# CRLF blank line (\r\n\r\n — the shape GitHub event payloads actually deliver)
+# never matched, the newline was consumed as gap, and this clean two-paragraph
+# body blocked. The hard-wrap twin proves CRLF wraps still stay in scope.
+expect 0 'separate paragraphs with CRLF endings (GitHub payload shape)' \
+  $'Companion change to fixture-repo-alpha#41; merge that one first.\r\n\r\nUnrelated: WAVE_VIEWPORT_LEASE_SECRET is now read from the env template.\r'
+expect 1 'hard wrap with CRLF endings still blocks' \
+  $'Rotation notes:\r\n- fixture-repo-alpha\r\n- WAVE_VIEWPORT_LEASE_SECRET rotated today\r'
 # Regression: a bare (?i) prefix once made the SCREAMING_CASE credential pattern
 # case-blind, so lowercase "api_key" near a private repo name blocked the body.
 expect 0 'lowercase credential-ish word near a private repo' \

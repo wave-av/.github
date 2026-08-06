@@ -199,7 +199,11 @@ if [[ -n "${GUARD_PRIVATE_REPOS:-}" ]]; then
     # The proximity gap: any character INSIDE a paragraph. A newline is allowed
     # only when not followed by another (possibly whitespace-padded) blank line,
     # so hard wraps and bullets stay in scope while a paragraph break resets it.
-    _GAP='(?:[^\n]|\n(?![ \t]*\n)){0,140}?'
+    # `\r` is part of the padding class: GitHub delivers PR/issue/comment bodies
+    # CRLF-terminated, so a real paragraph break arrives as `\r\n\r\n` — without
+    # `\r` the lookahead never sees the second newline and a clean two-paragraph
+    # body is misread as one wiring statement.
+    _GAP='(?:[^\n]|\n(?![ \t\r]*\n)){0,140}?'
     # Both orders: name-then-detail and detail-then-name. Case-insensitivity is
     # scoped to the repo-NAME alternation only — a bare `(?i)` prefix would bleed
     # into OPS_DETAIL and make its SCREAMING_CASE credential pattern match
