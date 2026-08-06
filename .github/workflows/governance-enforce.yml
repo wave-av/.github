@@ -74,10 +74,13 @@ jobs:
           BASE="${PR_BASE_SHA:-}"
           [ -n "$BASE" ] || BASE="${PUSH_BEFORE_SHA:-}"
           # A base can be PRESENT and still unusable: a force-push leaves `github.event.before`
-          # pointing at a commit this checkout no longer contains.
+          # pointing at a commit this checkout no longer contains. Do NOT fall back to HEAD~1
+          # here: that diffs only the newest commit, so earlier commits of a multi-commit
+          # force-push would reach main with a green check and zero examination. Clear the base
+          # and let the empty-tree fallback below scan the whole tree instead.
           if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ] \
              || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
-            BASE="$(git rev-parse --verify --quiet 'HEAD~1' || true)"
+            BASE=""
           fi
           # FIX 5 — fail CLOSED. This previously fell back to `BASE=HEAD`, and `--changed HEAD`
           # diffs HEAD against itself: an empty diff, zero files scanned, job green. With no
