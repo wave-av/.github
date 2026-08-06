@@ -56,6 +56,13 @@ expect 1 'private repo + secret count' \
   'fixture-repo-alpha went from 74 secrets to 75 after this change.'
 expect 1 'private repo + service binding' \
   'This adds a service binding from the worker to fixture-repo-gamma for settlement.'
+# Regression: the proximity gap was once [^\n]-only while rg matched per line,
+# so a hard-wrapped or bulleted body — the most common Markdown shape — put the
+# repo name and the credential name on different lines and NEVER tripped the rule.
+expect 1 'private repo + credential name across a hard wrap' \
+  'Rotation notes:
+- fixture-repo-alpha
+- WAVE_VIEWPORT_LEASE_SECRET rotated today'
 expect 1 'operator home path' \
   'Repro: run it from /Users/someoperator/Documents/notes and it fails.'  # enforce-ignore (fixture)
 expect 1 'operator linux home path' \
@@ -87,6 +94,14 @@ expect 0 'two private repos, no operational detail' \
   'Both fixture-repo-alpha and fixture-repo-beta will need a follow-up for this.'
 expect 0 'credential NAME with no private repo nearby' \
   'The handler now reads SOME_API_TOKEN from the environment instead of a literal.'
+# The other half of the paragraph-scoped gap: a blank line is a topic boundary.
+# Two facts in separate paragraphs are not one wiring statement, even within
+# 140 characters — without this, any body that mentions a private repo and,
+# paragraphs later, any credential NAME would block.
+expect 0 'private repo and credential name in separate paragraphs' \
+  'Companion change to fixture-repo-alpha#41; merge that one first.
+
+Unrelated: WAVE_VIEWPORT_LEASE_SECRET is now read from the env template.'
 # Regression: a bare (?i) prefix once made the SCREAMING_CASE credential pattern
 # case-blind, so lowercase "api_key" near a private repo name blocked the body.
 expect 0 'lowercase credential-ish word near a private repo' \

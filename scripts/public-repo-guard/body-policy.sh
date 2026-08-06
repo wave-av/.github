@@ -48,16 +48,29 @@ VIOLATIONS=0
 # only exemption is the explicit, visible `guard:allow <reason>` marker.
 ABOUT_THE_CONTROL='(public-repo-guard|body-policy|content-policy|public-github-write-gate|\bNDA\s+(gate|guard|policy|denylist|sweep|scan|hook)\b|\bno\s+NDA\b|responsib\w*\s+disclos|SECURITY\.md)'
 
-# check <BLOCK|WARN> <name> <regex> <why> [about-exempt]
+# check <BLOCK|WARN> <name> <regex> <why> [about-exempt] [multiline]
+#   multiline: scan with rg -U so the regex may span line breaks (the regex
+#   itself must still bound what a gap may cross — see private-repo-ops). The
+#   guard:allow and about-the-control filters stay LINE-scoped: they drop the
+#   marker-bearing line from a multi-line match, so the match blocks unless
+#   every reported line carries an exemption.
 check() {
-  local sev="$1" name="$2" re="$3" why="$4" scope="${5:-}"
+  local sev="$1" name="$2" re="$3" why="$4"; shift 4
+  local scope='' _ml=() _flag
+  for _flag in "$@"; do
+    case "$_flag" in
+      about-exempt) scope='about-exempt' ;;
+      multiline)    _ml=(-U) ;;
+      *) echo "::error::body-policy: internal bug — unknown flag '$_flag' for rule '$name'"; exit 2 ;;
+    esac
+  done
   [[ -z "$re" ]] && { echo "::error::body-policy: internal bug — empty regex for rule '$name'"; exit 2; }
   # rg exit: 0=match, 1=no match, >=2=real error → FAIL CLOSED. A gate that passes
   # because its scanner broke is worse than no gate: it reports success. The same
   # contract applies to every FILTER stage below: exit 1 ("nothing left") is a
   # normal outcome, exit >=2 must never be read as "no matches".
   local raw rc
-  raw="$(rg -nP --no-filename -- "$re" "$FILE" 2>/dev/null)"; rc=$?
+  raw="$(rg -nP ${_ml[@]+"${_ml[@]}"} --no-filename -- "$re" "$FILE" 2>/dev/null)"; rc=$?
   if (( rc >= 2 )); then
     echo "::error title=public-repo-guard ($name)::ripgrep failed (exit $rc) scanning rule '$name' — failing closed."
     exit 2
@@ -157,6 +170,14 @@ check BLOCK internal-marker  '(?i)(?<![“"'"'"'`])\b(internal[- ]only|do\s+not\
 # secret-binding verb, a service binding, or a secret COUNT. That is the topology
 # of what is wired to what, and it is the shape that actually leaked.
 #
+# The ~140-character window is PARAGRAPH-scoped, not line-scoped. Markdown
+# bodies are routinely hard-wrapped or bulleted ("- repo X\n- WAVE_..._SECRET
+# rotated" is exactly the shape this rule exists to catch), so the gap may
+# cross single newlines. A blank line — a paragraph break — ends proximity:
+# two facts in separate paragraphs are two topics, not one wiring statement.
+# This is the one rule scanned with rg -U (see check); every newline crossed
+# still spends the same 140-character budget.
+#
 # Names are NOT hardcoded (this file is public); CI injects them via the
 # GUARD_PRIVATE_REPOS variable. Unset locally → this check is skipped.
 if [[ -n "${GUARD_PRIVATE_REPOS:-}" ]]; then
@@ -175,14 +196,18 @@ if [[ -n "${GUARD_PRIVATE_REPOS:-}" ]]; then
     _ALT="${_ALT:+$_ALT|}${_esc}"
   done
   if [[ -n "$_ALT" ]]; then
+    # The proximity gap: any character INSIDE a paragraph. A newline is allowed
+    # only when not followed by another (possibly whitespace-padded) blank line,
+    # so hard wraps and bullets stay in scope while a paragraph break resets it.
+    _GAP='(?:[^\n]|\n(?![ \t]*\n)){0,140}?'
     # Both orders: name-then-detail and detail-then-name. Case-insensitivity is
     # scoped to the repo-NAME alternation only — a bare `(?i)` prefix would bleed
     # into OPS_DETAIL and make its SCREAMING_CASE credential pattern match
     # everyday lowercase prose like "api_key", blocking legitimate bodies.
     check BLOCK private-repo-ops \
-      "\\b(?i:${_ALT})\\b[^\\n]{0,140}?\\b${OPS_DETAIL}|${OPS_DETAIL}[^\\n]{0,140}?\\b(?i:${_ALT})\\b" \
+      "\\b(?i:${_ALT})\\b${_GAP}\\b${OPS_DETAIL}|${OPS_DETAIL}${_GAP}\\b(?i:${_ALT})\\b" \
       'A private WAVE repo named alongside internal operational detail (credential name, secret binding, or secret count) — the wiring topology is not public' \
-      about-exempt
+      about-exempt multiline
   fi
 fi
 
