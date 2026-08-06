@@ -17,8 +17,12 @@
 #
 # Exit: 0 clean · 1 blocking violation · 2 scanner error (fail closed).
 #
-# Allowlisting: a line carrying `guard:allow <reason>` is exempt (an accidental
-# leak never carries the marker; a deliberate one is visible in a public diff).
+# Allowlisting: a line carrying `guard:allow <reason>` is exempt. The threat
+# here is the ACCIDENTAL paste, which never carries the marker. A deliberate
+# leaker gains nothing from it — they can already evade any regex by reshaping
+# the text — and unlike an evasion, the marker is a visible, greppable string
+# sitting in the world-readable body itself. It is also the only escape hatch
+# that lets a security discussion quote e.g. an internal IP at all.
 # PROSE rules additionally exempt lines matching the ABOUT-THE-CONTROL allowlist
 # below; credential-FORMAT rules never do — a real key is a leak on any line.
 set -uo pipefail
@@ -102,8 +106,16 @@ check BLOCK private-key      '-----BEGIN [A-Z ]*PRIVATE KEY-----'            'Em
 # shellcheck disable=SC2016  # $CLOUDFLARE_ACCOUNT_ID is literal guidance text
 check BLOCK cf-account-id    'account_id\s*[:=]\s*["'"'"']?[0-9a-f]{32}'      'Hardcoded Cloudflare account_id — reference the env var instead'
 check BLOCK internal-ip      '100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.[0-9]{1,3}\.[0-9]{1,3}'  'Internal Tailscale-CGNAT IP (100.64.0.0/10) — internal fleet address'
+# The BODY profile diverges from content-policy.sh's verbatim rule here, on
+# purpose. Prose is full of strings a tree rarely contains: relative paths
+# ("docs/home/guides/setup") and URL routes ("example.com/home/status/") both
+# embed a `/home/<word>/` substring without leaking anyone's home directory.
+# So the match must BEGIN a path (no word/path character before the leading
+# slash — start of line, whitespace, quotes, parens all qualify) and must
+# CONTINUE past the username (a real leak is `/home/alice/wave/...`; a bare
+# route like `/home/status/` followed by prose stays silent).
 # shellcheck disable=SC2016  # $HOME is literal guidance text
-check BLOCK abs-user-path    '/(Users|home)/(?!runner/)[a-z][a-z0-9._-]+/'    'Operator absolute home path — leaks identity and local layout'
+check BLOCK abs-user-path    '(?<![\w.-])/(Users|home)/(?!runner/)[a-z][a-z0-9._-]+/[\w.]' 'Operator absolute home path — leaks identity and local layout'
 
 # --- Self-identified internal material ---------------------------------------
 # USE vs MENTION. A body that SAYS "internal-only" is leaking; a body that QUOTES
@@ -122,7 +134,15 @@ check BLOCK abs-user-path    '/(Users|home)/(?!runner/)[a-z][a-z0-9._-]+/'    'O
 # (?i), scoped to this rule only: these markers are PROSE, and real banners are
 # usually capitalised ("INTERNAL ONLY", "Do Not Share"). Credential-format rules
 # above stay case-exact on purpose — a key's case is part of its format.
-check BLOCK internal-marker  '(?i)(?<![“"'"'"'`])\b(internal[- ]only|do\s+not\s+(share|publish|distribute)|for\s+internal\s+use)\b(?![”"'"'"'`])' 'Text self-identifies as not-for-public' about-exempt
+#
+# The do-not-<verb> alternative distinguishes BANNER from ORDINARY PROSE by what
+# follows the verb. A banner is an imperative with no object ("DO NOT
+# DISTRIBUTE", "do not share externally"); everyday scheduling prose takes an
+# object or temporal clause ("do not publish until Friday", "do not share the
+# link yet"). The lookahead exempts the latter — a determiner, pronoun, or
+# temporal word right after the verb — because a gate that reddens routine
+# release chatter is the gate that gets switched off.
+check BLOCK internal-marker  '(?i)(?<![“"'"'"'`])\b(internal[- ]only|do\s+not\s+(share|publish|distribute)(?!\s+(?:the|this|that|these|those|it|them|my|your|our|their|until|unless|before|after|yet)\b)|for\s+internal\s+use)\b(?![”"'"'"'`])' 'Text self-identifies as not-for-public' about-exempt
 
 # --- Private repo + operational detail (PROXIMITY, not bare name) ------------
 # The BODY profile deliberately DIVERGES from the FILE profile here, and the

@@ -58,6 +58,8 @@ expect 1 'private repo + service binding' \
   'This adds a service binding from the worker to fixture-repo-gamma for settlement.'
 expect 1 'operator home path' \
   'Repro: run it from /Users/someoperator/Documents/notes and it fails.'  # enforce-ignore (fixture)
+expect 1 'operator linux home path' \
+  'The crash log sits at /home/someoperator/wave/edge.log on my machine.'  # enforce-ignore (fixture)
 expect 1 'internal-only marker' \
   'Attaching the internal-only rollout plan for context.'
 # Regression: the marker rule was once case-sensitive, so a capitalised banner —
@@ -91,6 +93,22 @@ expect 0 'lowercase credential-ish word near a private repo' \
   'Companion to fixture-repo-alpha#12: fixes the api_key parsing bug in the client.'
 expect 0 'public runner path is not an operator path' \
   'CI checks out to /home/runner/work/repo/repo before the scan runs.'  # enforce-ignore (fixture)
+# Regression: the home-path rule was once unanchored, so the `/home/guides/`
+# SUBSTRING of a relative docs path — common in prose, rare in a tree — blocked
+# the body, and the redacted annotation gave the author nothing to fix.
+expect 0 'relative docs path is not a home dir' \
+  'See docs/home/guides/setup for details on the rollout.'
+expect 0 'URL route starting with /home/ is not a home dir' \
+  'The endpoint /home/status/ returns 200 once the worker is warm.'
+# Regression: the do-not-<verb> alternative once fired on everyday scheduling
+# prose; an object or temporal clause after the verb marks it as prose, not a
+# banner.
+expect 0 'scheduling prose with a do-not verb' \
+  'Please do not publish until Friday; the announcement is still in review.'
+expect 0 'do-not verb with an ordinary object' \
+  'For now, do not share the link outside this thread.'
+expect 1 'bare do-not banner still blocks' \
+  'DO NOT DISTRIBUTE'
 expect 0 'talking about the control' \
   'body-policy blocks a private repo named next to a SECRET_TOKEN; that is intended.'
 # Pins the DELIBERATE trade for the proximity rule: it is about-exempt, so a line
