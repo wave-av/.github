@@ -1,6 +1,6 @@
-# pr-agent (OSS) caller — adopts the wave-foundation reusable lane.
-# Engine: OSS Qodo Merge on our OPENAI_KEY (trial-independent). SSOT:
-# wave-foundation/.github/workflows/reusable-pr-agent.yml
+# pr-agent (OSS) — inline form with neutral-on-flake (mirrors wave-foundation reusable).
+# The org-level copy fires across every fleet PR; a flaked reviewer must not block any PR.
+# Source of truth for logic: wave-foundation/.github/workflows/reusable-pr-agent.yml (#3128).
 name: pr-agent (OSS)
 on:
   pull_request:
@@ -19,6 +19,81 @@ concurrency:
 
 jobs:
   pr_agent:
-    uses: wave-av/wave-foundation/.github/workflows/reusable-pr-agent.yml@main
-    secrets:
-      OPENAI_KEY: ${{ secrets.OPENAI_KEY }}
+    timeout-minutes: 15
+    if: >-
+      ${{
+        (github.event_name == 'issue_comment'
+            && github.event.issue.pull_request
+            && startsWith(github.event.comment.body, '/')
+            && contains(fromJSON('["MEMBER","OWNER","COLLABORATOR"]'), github.event.comment.author_association))
+        || (github.event_name == 'pull_request'
+            && !contains(github.event.pull_request.user.login, '[bot]')
+            && github.event.pull_request.draft == false
+            && github.event.pull_request.head.repo.fork == false)
+      }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: PR-Agent (OSS qodo-merge)
+        id: agent
+        uses: The-PR-Agent/pr-agent@f6af7d77554ff8d26adffded077e6461329e92fa # v0.42.0
+        continue-on-error: true   # outcome is classified by the verdict step below (#3128)
+        env:
+          OPENAI_KEY: ${{ secrets.OPENAI_KEY }}
+          CONFIG__MODEL: "openai/claude-opus-5"
+          CONFIG__MODEL_WEAK: "openai/qwen3.7-flash"
+          CONFIG__MODEL_REASONING: "openai/claude-sonnet-5"
+          OPENAI_API_BASE: "https://api.wave.online/v1/dispatch"
+          CONFIG__CUSTOM_MODEL_MAX_TOKENS: "32000"
+          CONFIG__AI_TIMEOUT: "600"
+          CONFIG__FALLBACK_MODELS: "openai/qwen3-coder:30b"
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          github_action_config.auto_review: "true"
+          github_action_config.auto_describe: "false"
+          github_action_config.auto_improve: "true"
+          github_action_config.handle_push_trigger: "true"
+          pr_code_suggestions.commitable_code_suggestions: "true"
+          pr_code_suggestions.suggestions_score_threshold: "7"
+          pr_code_suggestions.num_code_suggestions: "6"
+
+      - name: backoff before retry
+        if: steps.agent.outcome == 'failure'
+        run: sleep 45
+
+      - name: PR-Agent retry (attempt 2)
+        id: agent_retry
+        if: steps.agent.outcome == 'failure'
+        uses: The-PR-Agent/pr-agent@f6af7d77554ff8d26adffded077e6461329e92fa # v0.42.0
+        continue-on-error: true
+        env:
+          OPENAI_KEY: ${{ secrets.OPENAI_KEY }}
+          CONFIG__MODEL: "openai/claude-opus-5"
+          CONFIG__MODEL_WEAK: "openai/qwen3.7-flash"
+          CONFIG__MODEL_REASONING: "openai/claude-sonnet-5"
+          OPENAI_API_BASE: "https://api.wave.online/v1/dispatch"
+          CONFIG__CUSTOM_MODEL_MAX_TOKENS: "32000"
+          CONFIG__AI_TIMEOUT: "600"
+          CONFIG__FALLBACK_MODELS: "openai/qwen3-coder:30b"
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          github_action_config.auto_review: "true"
+          github_action_config.auto_describe: "false"
+          github_action_config.auto_improve: "true"
+          github_action_config.handle_push_trigger: "true"
+          pr_code_suggestions.commitable_code_suggestions: "true"
+          pr_code_suggestions.suggestions_score_threshold: "7"
+          pr_code_suggestions.num_code_suggestions: "6"
+
+      - name: verdict (rate-limit -> neutral, never block)
+        if: always()
+        env:
+          AGENT_OUTCOME: ${{ steps.agent.outcome }}
+          AGENT_RETRY_OUTCOME: ${{ steps.agent_retry.outcome }}
+        run: |
+          if [ "$AGENT_OUTCOME" = "success" ] || [ "$AGENT_RETRY_OUTCOME" = "success" ]; then
+            exit 0
+          fi
+          if [ -z "$AGENT_OUTCOME" ]; then
+            echo "::error::pr-agent never ran — an earlier step failed or the job was cancelled."
+            exit 1
+          fi
+          echo "::warning::pr-agent failed after 2 attempts (45s backoff) — most commonly an upstream 429/rate-limit from the LLM router. Rendering NEUTRAL: an advisory reviewer must not block the PR (#3128)."
+          exit 0
