@@ -14,7 +14,13 @@ permissions:
   contents: read
 
 concurrency:
-  group: pr-agent-${{ github.event.pull_request.number || github.event.issue.number || github.ref }}
+  # KEYED ON event_name, and that word is the whole fix (wave-pen#386).
+  # Without it, `pull_request` and `issue_comment` share one group with
+  # cancel-in-progress, so ANY bot comment on a PR — including this lane's own
+  # review comment — cancels the live review roughly 10s in. Measured and fixed
+  # in wave-pen, then in wave-foundation-public#71. This ORG-LEVEL copy fires on
+  # every fleet PR, so it was the highest-leverage instance still carrying it.
+  group: pr-agent-${{ github.event_name }}-${{ github.event.pull_request.number || github.event.issue.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
