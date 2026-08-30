@@ -1,0 +1,21 @@
+.github/workflows/ticket-hygiene.yml
+  s_e68d8e687a2a18::t_100474791062bb 262-263,277-291
+  s_e68d8e687a2a18::t_d752970c7d0720 48,108
+  s_e68d8e687a2a18::t_e76182d3063319 176
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.23",
+  "base_commit_sha": "72db4d3ca66f4a37cdb01ca6532989d7f683a7fd",
+  "prompts": {},
+  "sessions": {
+    "s_e68d8e687a2a18": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_faf539936ffeKuNcxI8o62dicu",
+        "model": "deepseek-v4-pro"
+      },
+      "human_author": "Jake Fineman <jakefineman@gmail.com>"
+    }
+  }
+}
