@@ -23,3 +23,14 @@ Per the [repo-governance matrix](https://github.com/wave-av/wave-foundation/blob
 ## Security
 
 Vulnerabilities go through the [Security Policy](./SECURITY.md) (security@wave.online), never a public issue. Auth/scope/metering for WAVE services is enforced at the gateway — don't reimplement it in a spoke.
+
+
+## Machine surface
+
+```yaml agents-router
+version: "0.1"
+budget_lines: 200
+index:
+  - family: permissions-contract
+    path: PERMISSIONS.md
+```
