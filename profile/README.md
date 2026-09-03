@@ -1,8 +1,8 @@
 # WAVE
 
-**The open video layer — for humans and AI agents.** One API for live and on-demand video across every transport, built so that people *and* autonomous agents can capture, produce, deliver, and pay for media.
+**Media infrastructure for the agentic internet.** One call shape moves live and on-demand media across every transport, and both kinds of user — people and agents — discover it, call it, and pay for it per call.
 
-Like Stripe is for payments and Resend is for email — **WAVE is for audio and video.**
+Like Stripe is for payments and Resend is for email — **WAVE is for media.**
 
 ---
 
@@ -17,22 +17,25 @@ Like Stripe is for payments and Resend is for email — **WAVE is for audio and 
 
 | Package | Description | npm |
 |---------|-------------|-----|
-| [`@wave-av/sdk`](https://github.com/wave-av/sdk) | TypeScript SDK — 34 API modules | [![npm](https://img.shields.io/npm/v/@wave-av/sdk.svg)](https://www.npmjs.com/package/@wave-av/sdk) |
+| [`@wave-av/sdk`](https://github.com/wave-av/sdk) | TypeScript SDK — 45 module subpaths | [![npm](https://img.shields.io/npm/v/@wave-av/sdk.svg)](https://www.npmjs.com/package/@wave-av/sdk) |
 | [`@wave-av/adk`](https://github.com/wave-av/adk) | Agent Developer Kit — MCP tools + agent templates | [![npm](https://img.shields.io/npm/v/@wave-av/adk.svg)](https://www.npmjs.com/package/@wave-av/adk) |
 | [`@wave-av/mcp-server`](https://github.com/wave-av/mcp-server) | MCP server for Claude, Cursor, and Windsurf | [![npm](https://img.shields.io/npm/v/@wave-av/mcp-server.svg)](https://www.npmjs.com/package/@wave-av/mcp-server) |
+| [`@wave-av/cli`](https://github.com/wave-av/cli) | Command-line interface for the WAVE streaming platform | [![npm](https://img.shields.io/npm/v/@wave-av/cli.svg)](https://www.npmjs.com/package/@wave-av/cli) |
+| [`@wave-av/workflow-sdk`](https://github.com/wave-av/workflow-sdk) | Build and execute workflows on the WAVE platform | [![npm](https://img.shields.io/npm/v/@wave-av/workflow-sdk.svg)](https://www.npmjs.com/package/@wave-av/workflow-sdk) |
+| [`@wave-av/dispatch`](https://github.com/wave-av/dispatch-edge) | Local-first AI routing — edge worker + client SDKs | [![npm](https://img.shields.io/npm/v/@wave-av/dispatch.svg)](https://www.npmjs.com/package/@wave-av/dispatch) |
 
 Python developers: [`wave-sdk`](https://github.com/wave-av/sdk-python) on PyPI.
 
 ## Quick start
 
 ```bash
-# SDK — build video features into your app
+# SDK — build media features into your app
 npm install @wave-av/sdk
 
-# MCP server — give AI agents video capabilities
+# MCP server — give AI agents media capabilities
 npx @wave-av/mcp-server
 
-# ADK — build autonomous video agents
+# ADK — build autonomous media agents
 npm install @wave-av/adk
 ```
 
@@ -43,11 +46,12 @@ import { Wave } from '@wave-av/sdk';
 
 const wave = new Wave({ apiKey: process.env.WAVE_API_KEY! });
 
-const stream = await wave.pipeline.create({
-  title: 'My stream',
-  protocol: 'webrtc',
+const clip = await wave.clips.create({
+  title: 'Best moment',
+  source: { type: 'stream', id: 'stream_123', start_time: 120, end_time: 150 },
 });
-await wave.pipeline.start(stream.id);
+
+const clips = await wave.clips.list({ status: 'ready' });
 ```
 
 ## For AI agents
@@ -76,7 +80,7 @@ Tools for streams, studio, analytics, billing, and production controls — and e
 ## Links
 
 - [wave.online](https://wave.online) — the platform
-- [Developer portal](https://dev.wave.online) — keys, references, quickstarts
+- [Developer portal](https://developer.wave.online) — keys, references, quickstarts
 - [Documentation](https://docs.wave.online)
 - [Agent commerce](https://wave.online/agent-commerce) · [Protocol](https://wave.online/protocol) · [The name](https://wave.online/av)
 - [Status](https://wave.online/status)
