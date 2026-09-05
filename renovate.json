@@ -5,12 +5,20 @@
     ":dependencyDashboard",
     "helpers:pinGitHubActionDigests"
   ],
-  "npmrc": "@wave-av:registry=https://npm.pkg.github.com",
+  "dependencyDashboard": true,
+  "npmrc": "@wave-av:registry=https://npm.pkg.github.com/",
+  "hostRules": [
+    {
+      "hostType": "npm",
+      "matchHost": "https://npm.pkg.github.com/",
+      "token": "{{ secrets.WAVE_AV_NPM_PKG_GITHUB_TOKEN }}"
+    }
+  ],
   "packageRules": [
     {
       "description": "WAVE internal packages (the spoke-chassis): keep every spoke on the LATEST published version. Labeled chassis-automerge so the renovate-reaper (wave-foundation) auto-approves + squash-merges these after its diff/lockfile/deploy gates — which then triggers each spoke's deploy-on-merge.",
-      "matchPackagePatterns": [
-        "^@wave-av/"
+      "matchPackageNames": [
+        "@wave-av/**"
       ],
       "rangeStrategy": "bump",
       "semanticCommitType": "chore",
