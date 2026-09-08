@@ -1,0 +1,37 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "WAVE org-wide Renovate preset. Every wave-av repo extends this via `local>wave-av/.github`. Named default.json (NOT renovate.json) because Renovate resolves a preset to default.json first and only falls back to renovate.json with a deprecation warning.",
+  "extends": [
+    "config:recommended",
+    ":dependencyDashboard",
+    "helpers:pinGitHubActionDigests"
+  ],
+  "npmrc": "@wave-av:registry=https://npm.pkg.github.com/",
+  "hostRules": [
+    {
+      "description": "Read credentials for GitHub Packages. Without this, every @wave-av/* lookup fails with `no-result` because npm.pkg.github.com requires auth even to READ. The token is NOT stored here: `{{ secrets.* }}` is resolved by the Mend-hosted app from an ORG-scoped secret set in the Credentials section of the wave-av org settings at developer.mend.io. Nothing secret is committed.",
+      "matchHost": "https://npm.pkg.github.com/",
+      "hostType": "npm",
+      "token": "{{ secrets.WAVE_PACKAGES_READ_TOKEN }}"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "WAVE internal packages (the spoke-chassis): keep every spoke on the LATEST published version. Labeled chassis-automerge so the renovate-reaper (wave-foundation) auto-approves + squash-merges these after its diff/lockfile/deploy gates - which then triggers each spoke's deploy-on-merge.",
+      "matchPackageNames": [
+        "@wave-av/**"
+      ],
+      "rangeStrategy": "bump",
+      "semanticCommitType": "chore",
+      "commitMessageTopic": "spoke-chassis",
+      "labels": [
+        "chassis-automerge"
+      ],
+      "minimumReleaseAge": "0 days"
+    }
+  ],
+  "schedule": [
+    "after 1am and before 6am"
+  ],
+  "timezone": "America/New_York"
+}
