@@ -1,0 +1,7 @@
+{
+  "name": "Public-repo guard (body content policy)",
+  "description": "Companion to the public-repo guard tree scan: runs the WAVE body-policy script over PR titles/bodies, review bodies, and issue/comment text, which are equally world-readable. Deliberately a separate workflow file so body-only events never emit a check run for the tree context (a skipped run would supersede a failing required check). Install alongside public-repo-guard.yml on every public repo.",
+  "iconName": "octicon shield-lock",
+  "categories": ["Continuous integration", "Security", "WAVE"],
+  "filePatterns": [".*"]
+}

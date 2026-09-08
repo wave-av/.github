@@ -20,7 +20,7 @@ or use GitHub's "New workflow" UI and pick the WAVE template.
 
 **For:** **every** WAVE public repo. This is the standing pre-publication gate.
 
-**What it does:** two complementary checks on each PR / push —
+**What it does:** three complementary checks —
 1. **gitleaks** — formatted secrets (API keys, tokens, private keys), using the
    canonical `.gitleaks.toml` at the root of this repo (placeholders / fixtures
    allowlisted).
@@ -28,10 +28,15 @@ or use GitHub's "New workflow" UI and pick the WAVE template.
    live Stripe account IDs (`acct_…`), hardcoded Cloudflare `account_id`s,
    developer absolute paths (`/Users/…`), references to private WAVE repos, and
    committed `.env` files.
+3. **body-policy.sh** — the same leak classes in PR / review / issue / comment
+   TEXT, which is equally world-readable and was previously scanned by nothing
+   server-side. On a PR it blocks the merge; on an issue, comment, or review it
+   detects so the text can be redacted fast.
 
-Both the config and the script are fetched from `wave-av/.github` at run time, so
-the rules live in exactly one place across the org. A repo may ship its own
-`.gitleaks.toml` to extend the rules locally.
+The config and the scripts are VENDORED into each repo alongside the workflow —
+they are NOT fetched at run time, so the gate is fully reviewable and cannot be
+reprogrammed out-of-band. A repo may extend its local `.gitleaks.toml` to add
+rules.
 
 **Private-repo name denylist:** the list of private repo/product names to block
 is *not* baked into the (public) script. Set an org-level Actions **variable**
@@ -41,9 +46,26 @@ check is skipped when the variable is empty.
 **Allowlisting:** annotate a verified-safe line with `# guard:allow <reason>`, or
 add a path glob to a `.guardignore` at the repo root.
 
-**Install + enforce:** copy `public-repo-guard.yml` into `.github/workflows/`
-(or use the "New workflow" UI), then add `public-repo-guard / Secrets + content
-policy` to the branch's required status checks so it blocks merges.
+**Install + enforce:** copy the six files the workflow's header lists —
+`public-repo-guard.yml` AND `public-repo-guard-body.yml` into
+`.github/workflows/`, plus `.gitleaks.toml`,
+`scripts/public-repo-guard/content-policy.sh`,
+`scripts/public-repo-guard/body-policy.sh`, and
+`scripts/public-repo-guard/tests/body-policy.test.sh` — then add BOTH check
+names, `public-repo-guard / Secrets + content policy` and
+`public-repo-guard / Body content policy`, to the branch's required status
+checks. The tree check alone does not gate body edits: those only trigger the
+body workflow, so without the second required check a failing body scan leaves
+the PR mergeable.
+
+The two workflow FILES are deliberate, not an accident of packaging. A job
+disabled by `if:` still publishes a check run with a non-failing `skipped`
+conclusion, and branch protection reads the latest check run per name — so if
+body events triggered the tree scan's file, a description edit or review
+comment would let a skipped tree job supersede a FAILING
+`Secrets + content policy` result on the same commit. Separate files mean a
+body event can never emit a check run for the tree context. Install both or
+neither; do not merge them back into one file.
 
 ## How to add a new template
 
