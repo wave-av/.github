@@ -43,7 +43,7 @@ jobs:
     steps:
       - name: Mint issue-ops App token
         id: tok
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
           client-id: ${{ secrets.BOT_ISSUE_OPS_APP_ID }}
           private-key: ${{ secrets.BOT_ISSUE_OPS_PRIVATE_KEY }}
@@ -103,7 +103,7 @@ jobs:
     steps:
       - name: Mint issue-ops App token
         id: tok
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
           client-id: ${{ secrets.BOT_ISSUE_OPS_APP_ID }}
           private-key: ${{ secrets.BOT_ISSUE_OPS_PRIVATE_KEY }}
