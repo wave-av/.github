@@ -20,6 +20,12 @@ Per the [repo-governance matrix](https://github.com/wave-av/wave-foundation/blob
 - Update `CHANGELOG.md` (`Unreleased`) with user-facing changes.
 - Human docs (`README`) are warm and benefit-led; agent docs (this file, `llms.txt`, `skill.md`) are terse and contract-led. Keep both in sync — never ship one without the other.
 
+## CI courtesy rule (WAVE-32167)
+
+- On Buildkite queue expiry, never push an empty commit or rebase just to get a build. Rebuild the same commit once, and only when at least 2 agents are connected and the oldest waiting job is under 30 minutes old. If that rebuild expires too, stop and post one note.
+- Rebase only for a real conflict or a check that needs a newer main, at most once per day per PR.
+- Keep at most 2 open builds per lane on the shared isolated queue.
+
 ## Security
 
 Vulnerabilities go through the [Security Policy](./SECURITY.md) (security@wave.online), never a public issue. Auth/scope/metering for WAVE services is enforced at the gateway — don't reimplement it in a spoke.
