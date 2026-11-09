@@ -1,10 +1,21 @@
 name: public-repo-guard
 
-# Pre-publication content gate for WAVE public repos. Two complementary checks:
+# Pre-publication content gate for WAVE public repos — the TREE half. Two
+# complementary checks:
 #   1. gitleaks  — formatted secrets (API keys, tokens, private keys) in the tree.
 #   2. content-policy.sh — WAVE-specific leaks gitleaks misses: live Stripe account
 #      IDs, hardcoded Cloudflare account_ids, developer absolute paths, references
 #      to private WAVE repos, and committed .env files.
+#
+# The BODY half (PR/review/issue/comment text) lives in its own file,
+# public-repo-guard-body.yml, and the split is load-bearing, not cosmetic. A job
+# disabled by `if:` still publishes a check run under its context name with a
+# non-failing `skipped` conclusion, and branch protection reads the LATEST check
+# run per context. When body events triggered this file, every body edit or
+# review comment made the skipped tree job emit a fresh `skipped` result for the
+# same head SHA — superseding a FAILING `Secrets + content policy` run and making
+# a PR the secret scan had rejected mergeable. Separate files mean a body event
+# can never produce a check run for the tree context, and vice versa.
 #
 # Self-contained by design: the gitleaks config (.gitleaks.toml) and the policy
 # script (scripts/public-repo-guard/content-policy.sh) are VENDORED into the repo
@@ -13,10 +24,13 @@ name: public-repo-guard
 # wave-av/.github must not be able to alter another repo's secret scanner). The
 # gitleaks binary is version-pinned AND SHA-256-verified before it runs.
 #
-# To install on a new repo, copy all three files together:
+# To install on a new repo, copy all six files together:
 #   .github/workflows/public-repo-guard.yml
+#   .github/workflows/public-repo-guard-body.yml
 #   .gitleaks.toml
 #   scripts/public-repo-guard/content-policy.sh
+#   scripts/public-repo-guard/body-policy.sh
+#   scripts/public-repo-guard/tests/body-policy.test.sh
 #
 # Scan scope: the published working TREE (gitleaks --no-git), NOT git history. The
 # goal is "what is public right now is clean", so a shallow checkout is sufficient.
@@ -26,23 +40,33 @@ name: public-repo-guard
 
 on:
   pull_request:
+    # No `edited`, deliberately: a title or body edit does not change the tree,
+    # and per the header it must not emit a tree check run either — a skipped run
+    # for an unchanged tree would supersede a failing one. Body edits are the
+    # body workflow's job.
+    types: [opened, reopened, synchronize]
   push:
     branches: [main, master]
   workflow_dispatch:
 
+# `pull_request`, deliberately NOT `pull_request_target`: a fork PR must never get
+# a write token or repo secrets just because a gate wanted to read its tree.
 permissions:
   contents: read
-
-concurrency:
-  group: public-repo-guard-${{ github.ref }}
-  cancel-in-progress: true
 
 jobs:
   guard:
     name: Secrets + content policy
+    # A cancelling group: a push supersedes the tree, and every trigger of this
+    # file is a tree event, so nothing body-shaped can cancel a tree run (the
+    # failure mode that plagued the old workflow-level group — see the body
+    # workflow's header for that history).
+    concurrency:
+      group: public-repo-guard-tree-${{ github.event.pull_request.number || github.ref }}
+      cancel-in-progress: true
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       # gitleaks' GitHub Action requires a paid license for organizations; the CLI
       # itself is MIT-licensed and free. Pin the version AND verify the release
@@ -67,7 +91,27 @@ jobs:
       - name: Install ripgrep
         run: command -v rg >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq ripgrep)
 
+      # Deliberately the PR's OWN copy of the policy, and the asymmetry with the
+      # body workflow's trusted-base checkout is intentional, not an oversight.
+      # Two reasons. First, pinning to base removes no attacker capability here:
+      # on pull_request events the workflow DEFINITION itself executes from the
+      # PR merge ref, so a PR that could gut content-policy.sh could as easily
+      # rewrite this file into a no-op job with the same required-check name.
+      # That vector is covered by review of gate-file diffs and by the push
+      # trigger, which re-scans main with main's own policy after merge. Second,
+      # unlike the body gate (which judges TEXT, so its policy version need not
+      # track the tree), this job judges THE TREE the policy ships in: a PR that
+      # legitimately updates the policy or its fixtures must be scanned and
+      # self-tested by the version it ships, or script and fixtures could never
+      # change together.
       - name: content policy (WAVE trade-secret / internal-leak gate)
         env:
           GUARD_PRIVATE_REPOS: ${{ vars.GUARD_PRIVATE_REPOS }}
         run: bash scripts/public-repo-guard/content-policy.sh .
+
+      # The body gate's own fixtures. Its negatives are the load-bearing half — a
+      # leak gate that blocks legitimate cross-repo references gets switched off,
+      # and then it protects nothing. Runs here (the tree job) because the script
+      # under test is tree content and only changes when the tree does.
+      - name: body policy self-test (fixtures)
+        run: bash scripts/public-repo-guard/tests/body-policy.test.sh
