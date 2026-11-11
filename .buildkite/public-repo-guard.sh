@@ -42,6 +42,9 @@ tar -xzf "$TOOLS/rg.tar.gz" -C "$TOOLS" --strip-components=1 "ripgrep-${RG_VERSI
 export PATH="$TOOLS:$PATH"
 rg --version | head -1
 
+echo "+++ :mag: content-policy vendor-allowlist selftest"
+bash scripts/public-repo-guard/content-policy.vendor-allowlist-selftest.sh
+
 echo "+++ :mag: gitleaks (secret scan, published tree)"
 gitleaks detect --no-git --source . --config .gitleaks.toml --redact --no-banner --exit-code 1
 
