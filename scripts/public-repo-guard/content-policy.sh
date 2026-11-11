@@ -4,8 +4,11 @@
 # gitleaks catches FORMATTED secrets (API keys, tokens, private keys). This script
 # catches the WAVE-specific things gitleaks does NOT: live billing identifiers,
 # infra account IDs, hardcoded developer paths, private-repo names, and committed
-# dotenv files. It is intentionally conservative (low false-positive) so it can be
-# a BLOCKING merge gate on public repos.
+# dotenv files. It also re-covers Slack / classic GitHub PAT / Google / npm tokens
+# in trees gitleaks 8.30.1 default-allowlists (vendor JS filenames, bower_components,
+# site-packages) so a single-tool skip cannot land those credentials. It is
+# intentionally conservative (low false-positive) so it can be a BLOCKING merge
+# gate on public repos.
 #
 # Scope: scans the working tree (the state being merged). Run AFTER checkout.
 # Exits non-zero on any BLOCK violation. Allowlist a specific line with an inline
@@ -110,8 +113,17 @@ if [[ -n "${GUARD_PRIVATE_REPOS:-}" ]]; then
 fi
 
 # --- Credential formats gitleaks may miss in-context -------------------------
+# Slack / classic GitHub PAT / Google / npm are in gitleaks' default rule set,
+# but gitleaks 8.30.1 useDefault also path-allowlists vendor JS filenames
+# (jquery.min.js, bootstrap.min.js, angular.min.js, …), bower_components/, and
+# **/site-packages/**. Those trees are NOT in this script's IGNORE list, so these
+# BLOCK rules are the remaining half of the org gate for those families.
 check BLOCK anthropic-key    'sk-ant-(api|admin)[0-9]{2}-[A-Za-z0-9_-]{20,}'      'Real Anthropic API/admin key'
 check BLOCK github-pat       'github_pat_[A-Za-z0-9_]{30,}'                       'GitHub fine-grained PAT'
+check BLOCK github-classic   'ghp_[A-Za-z0-9]{36}'                                'Classic GitHub PAT'
+check BLOCK slack-token      'xox[baprs]-[0-9A-Za-z-]{10,}'                       'Slack bot/user/app token'
+check BLOCK google-api-key   'AIza[0-9A-Za-z_-]{35}'                              'Google API key'
+check BLOCK npm-token        'npm_[A-Za-z0-9]{36}'                                'npm access token'
 check BLOCK supabase-pat     'sbp_[a-f0-9]{40}'                                   'Supabase personal access token'
 check BLOCK aws-akid         'AKIA[0-9A-Z]{16}'                                   'AWS access key ID'
 check BLOCK private-key      '-----BEGIN [A-Z ]*PRIVATE KEY-----'                 'Embedded private key material'
