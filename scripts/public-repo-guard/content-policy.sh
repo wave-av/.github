@@ -15,6 +15,7 @@
 # Usage: scripts/public-repo-guard/content-policy.sh [root]   (default root = .)
 set -uo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="${1:-.}"
 cd "$ROOT" || { echo "::error::content-policy: cannot cd to $ROOT"; exit 2; }
 command -v rg >/dev/null 2>&1 || { echo "::error::content-policy: ripgrep (rg) required"; exit 2; }
@@ -73,48 +74,52 @@ check() {
   fi
 }
 
-# --- Financial / billing identifiers -----------------------------------------
-check BLOCK stripe-account   'acct_[A-Za-z0-9]{16,}'                              'Live Stripe account ID — financial infra, never publish'
-check BLOCK stripe-live-key  '(sk|rk)_live_[A-Za-z0-9]{16,}'                      'Live Stripe secret/restricted key'
-check WARN  stripe-object    '(cus|sub|price|prod)_[A-Za-z0-9]{14,}'             'Stripe object ID — verify it is an EXAMPLE, not a real account object'
+run_pattern_rules() {
+  # --- Financial / billing identifiers -----------------------------------------
+  check BLOCK stripe-account   'acct_[A-Za-z0-9]{16,}'                              'Live Stripe account ID — financial infra, never publish'
+  check BLOCK stripe-live-key  '(sk|rk)_live_[A-Za-z0-9]{16,}'                      'Live Stripe secret/restricted key'
+  check WARN  stripe-object    '(cus|sub|price|prod)_[A-Za-z0-9]{14,}'             'Stripe object ID — verify it is an EXAMPLE, not a real account object'
 
-# --- Infrastructure identifiers ----------------------------------------------
-# shellcheck disable=SC2016  # $CLOUDFLARE_ACCOUNT_ID is literal guidance text, not meant to expand
-check BLOCK cf-account-id    'account_id\s*[:=]\s*["'"'"']?[0-9a-f]{32}'          'Hardcoded Cloudflare account_id — source it from $CLOUDFLARE_ACCOUNT_ID'
+  # --- Infrastructure identifiers ----------------------------------------------
+  # shellcheck disable=SC2016  # $CLOUDFLARE_ACCOUNT_ID is literal guidance text, not meant to expand
+  check BLOCK cf-account-id    'account_id\s*[:=]\s*["'"'"']?[0-9a-f]{32}'          'Hardcoded Cloudflare account_id — source it from $CLOUDFLARE_ACCOUNT_ID'
 
-# --- Internal network identifiers --------------------------------------------
-# Tailscale CGNAT range (100.64.0.0/10) — internal fleet IPs must never appear in
-# a public tree. Narrow on purpose: never trips 127.0.0.1, 0.0.0.0, public IPs, or
-# RFC1918 documentation addresses. Pattern is byte-for-byte lockstep with
-# foundation's sync-public.sh / verify-public-mirror.sh INTERNAL_IP_PAT, so the
-# pre-publish mirror gate and this public-repo gate agree on the same leak class.
-check BLOCK internal-ip      '100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.[0-9]{1,3}\.[0-9]{1,3}'  'Internal Tailscale-CGNAT IP (100.64.0.0/10) — internal fleet address, never publish'
+  # --- Internal network identifiers --------------------------------------------
+  # Tailscale CGNAT range (100.64.0.0/10) — internal fleet IPs must never appear in
+  # a public tree. Narrow on purpose: never trips 127.0.0.1, 0.0.0.0, public IPs, or
+  # RFC1918 documentation addresses. Pattern is byte-for-byte lockstep with
+  # foundation's sync-public.sh / verify-public-mirror.sh INTERNAL_IP_PAT, so the
+  # pre-publish mirror gate and this public-repo gate agree on the same leak class.
+  check BLOCK internal-ip      '100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.[0-9]{1,3}\.[0-9]{1,3}'  'Internal Tailscale-CGNAT IP (100.64.0.0/10) — internal fleet address, never publish'
 
-# --- Developer / private-repo leakage ----------------------------------------
-# shellcheck disable=SC2016  # $HOME is literal guidance text, not meant to expand
-check BLOCK abs-user-path    '/(Users|home)/(?!runner/)[a-z][a-z0-9._-]+/'        'Hardcoded developer absolute path — use $HOME or a CLI argument'
+  # --- Developer / private-repo leakage ----------------------------------------
+  # shellcheck disable=SC2016  # $HOME is literal guidance text, not meant to expand
+  check BLOCK abs-user-path    '/(Users|home)/(?!runner/)[a-z][a-z0-9._-]+/'        'Hardcoded developer absolute path — use $HOME or a CLI argument'
 
-# Private WAVE repo/product names that must never appear in a public tree. The
-# names are NOT hardcoded here (this file is itself public) — they are supplied
-# at run time via GUARD_PRIVATE_REPOS (CI injects it from an org-level Actions
-# variable), comma- or space-separated. Unset locally → this check is skipped.
-if [[ -n "${GUARD_PRIVATE_REPOS:-}" ]]; then
-  IFS=', ' read -r -a _PRIV <<< "$GUARD_PRIVATE_REPOS"
-  for _name in "${_PRIV[@]}"; do
-    [[ -z "$_name" ]] && continue
-    # Regex-escape the name so metacharacters in a repo name (., -, etc.) match
-    # literally rather than changing the pattern's meaning.
-    _esc="$(printf '%s' "$_name" | sed -E 's/[][(){}.^$*+?|\\]/\\&/g')"
-    check BLOCK private-repo "\\b${_esc}\\b" 'Reference to a private WAVE repo/product (configured via GUARD_PRIVATE_REPOS) — keep out of public'
-  done
-fi
+  # Private WAVE repo/product names that must never appear in a public tree. The
+  # names are NOT hardcoded here (this file is itself public) — they are supplied
+  # at run time via GUARD_PRIVATE_REPOS (CI injects it from an org-level Actions
+  # variable), comma- or space-separated. Unset locally → this check is skipped.
+  if [[ -n "${GUARD_PRIVATE_REPOS:-}" ]]; then
+    IFS=', ' read -r -a _PRIV <<< "$GUARD_PRIVATE_REPOS"
+    for _name in "${_PRIV[@]}"; do
+      [[ -z "$_name" ]] && continue
+      # Regex-escape the name so metacharacters in a repo name (., -, etc.) match
+      # literally rather than changing the pattern's meaning.
+      _esc="$(printf '%s' "$_name" | sed -E 's/[][(){}.^$*+?|\\]/\\&/g')"
+      check BLOCK private-repo "\\b${_esc}\\b" 'Reference to a private WAVE repo/product (configured via GUARD_PRIVATE_REPOS) — keep out of public'
+    done
+  fi
 
-# --- Credential formats gitleaks may miss in-context -------------------------
-check BLOCK anthropic-key    'sk-ant-(api|admin)[0-9]{2}-[A-Za-z0-9_-]{20,}'      'Real Anthropic API/admin key'
-check BLOCK github-pat       'github_pat_[A-Za-z0-9_]{30,}'                       'GitHub fine-grained PAT'
-check BLOCK supabase-pat     'sbp_[a-f0-9]{40}'                                   'Supabase personal access token'
-check BLOCK aws-akid         'AKIA[0-9A-Z]{16}'                                   'AWS access key ID'
-check BLOCK private-key      '-----BEGIN [A-Z ]*PRIVATE KEY-----'                 'Embedded private key material'
+  # --- Credential formats gitleaks may miss in-context -------------------------
+  check BLOCK anthropic-key    'sk-ant-(api|admin)[0-9]{2}-[A-Za-z0-9_-]{20,}'      'Real Anthropic API/admin key'
+  check BLOCK github-pat       'github_pat_[A-Za-z0-9_]{30,}'                       'GitHub fine-grained PAT'
+  check BLOCK supabase-pat     'sbp_[a-f0-9]{40}'                                   'Supabase personal access token'
+  check BLOCK aws-akid         'AKIA[0-9A-Z]{16}'                                   'AWS access key ID'
+  check BLOCK private-key      '-----BEGIN [A-Z ]*PRIVATE KEY-----'                 'Embedded private key material'
+}
+
+run_pattern_rules
 
 # --- Committed dotenv (real env, not templates) ------------------------------
 # List candidate files with the SAME ignore filtering as check() so .guardignore
@@ -134,6 +139,25 @@ if [[ -n "$ENVHITS" ]]; then
   echo "::endgroup::"
   echo "::error title=public-repo-guard (committed-dotenv)::Committed .env file(s). Commit only .env.example/.sample/.template."
   VIOLATIONS=$((VIOLATIONS+1))
+fi
+
+# Second pass: reconstruct quoted concatenations (`'a' + 'b'`) and shell
+# backslash-continuations so a secret split across literals still matches.
+# gitleaks 8.30.1 and a single-line rg pass both miss that shape.
+# python3 is required for this pass; skipping it would green-light the bypass.
+command -v python3 >/dev/null 2>&1 || { echo "::error::content-policy: python3 required to reconstruct concatenated secrets"; exit 2; }
+FUSED="$(mktemp -d "${TMPDIR:-/tmp}/prg-fuse.XXXXXX")"
+trap 'rm -rf "$FUSED"' EXIT
+_n_fused="$(rg --files --hidden --no-ignore-vcs "${IGNORE[@]}" | python3 "$SCRIPT_DIR/fuse-concat.py" "$FUSED")"
+if [[ -z "${_n_fused:-}" ]] || ! [[ "$_n_fused" =~ ^[0-9]+$ ]]; then
+  echo "::error title=public-repo-guard (concat-reconstruct)::python reconstruction failed — failing closed."; exit 2
+fi
+if (( _n_fused > 0 )); then
+  echo "::notice::content-policy: second pass on $_n_fused reconstructed file(s) (concatenated or continued strings)"
+  _saved="$PWD"
+  cd "$FUSED" || { echo "::error::content-policy: cannot cd to fused tree"; exit 2; }
+  run_pattern_rules
+  cd "$_saved" || { echo "::error::content-policy: cannot return from fused tree"; exit 2; }
 fi
 
 if (( VIOLATIONS > 0 )); then
