@@ -45,5 +45,8 @@ rg --version | head -1
 echo "+++ :mag: gitleaks (secret scan, published tree)"
 gitleaks detect --no-git --source . --config .gitleaks.toml --redact --no-banner --exit-code 1
 
+echo "+++ :mag: content-policy concat selftest"
+bash scripts/public-repo-guard/concat-selftest.sh
+
 echo "+++ :mag: content policy"
 bash scripts/public-repo-guard/content-policy.sh .
