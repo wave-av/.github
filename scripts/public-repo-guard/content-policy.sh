@@ -8,9 +8,9 @@
 # a BLOCKING merge gate on public repos.
 #
 # Scope: scans the working tree (the state being merged). Run AFTER checkout.
-# Exits non-zero on any BLOCK violation. Allowlist a specific line with an inline
-# `# guard:allow <reason>` comment, or exclude paths via a .guardignore (one glob
-# per line) at the repo root.
+# Exits non-zero on any BLOCK violation. Allowlist a specific SOURCE LINE with an
+# inline `# guard:allow <reason>` comment, or exclude paths via a .guardignore
+# (one glob per line) at the repo root. The marker in a file path is a BLOCK.
 #
 # Usage: scripts/public-repo-guard/content-policy.sh [root]   (default root = .)
 set -uo pipefail
@@ -18,6 +18,10 @@ set -uo pipefail
 ROOT="${1:-.}"
 cd "$ROOT" || { echo "::error::content-policy: cannot cd to $ROOT"; exit 2; }
 command -v rg >/dev/null 2>&1 || { echo "::error::content-policy: ripgrep (rg) required"; exit 2; }
+# rg 14+: --field-match-separator keeps path/line/text distinct when a path
+# contains colons (the inline-allow marker itself is `guard:allow`).
+rg --help 2>/dev/null | grep -q -- '--field-match-separator' \
+  || { echo "::error::content-policy: ripgrep is too old (need --field-match-separator, rg 14+)"; exit 2; }
 
 VIOLATIONS=0
 
@@ -49,21 +53,23 @@ check() {
   # rg exit: 0=match, 1=no match, >=2=real error → FAIL CLOSED (never pass a gate
   # silently because the scanner errored).
   local raw rc
-  raw="$(rg -nP --hidden --no-ignore-vcs "${IGNORE[@]}" -- "$re" . 2>/dev/null)"; rc=$?
+  # Tab separator: a path containing `guard:allow` (a colon) must not be parsed
+  # as file:line, or the match text is printed into public CI logs.
+  raw="$(rg -nP --with-filename --field-match-separator $'\t' --hidden --no-ignore-vcs "${IGNORE[@]}" -- "$re" . 2>/dev/null)"; rc=$?
   if (( rc >= 2 )); then
     echo "::error title=public-repo-guard ($name)::ripgrep failed (exit $rc) scanning rule '$name' — failing closed."; exit 2
   fi
-  # Only the documented inline form `# guard:allow <reason>` suppresses a hit, and
-  # the reason is mandatory (non-space after the marker) — a bare marker, or the
-  # string appearing elsewhere on the line, must NOT bypass detection.
+  # Only the documented inline form `# guard:allow <reason>` on the SOURCE LINE
+  # suppresses a hit. Matching the marker against the whole rg line let a path
+  # that contained the marker hide every hit in that file.
   local matches
-  matches="$(printf '%s' "$raw" | grep -vE '#[[:space:]]*guard:allow[[:space:]]+[^[:space:]]' || true)"
+  matches="$(printf '%s' "$raw" | grep -vE $'\t[0-9]+\t.*#[[:space:]]*guard:allow[[:space:]]+[^[:space:]]' || true)"
   [[ -z "$matches" ]] && return 0
   local count; count="$(printf '%s\n' "$matches" | grep -c '' )"
   echo "::group::[$sev] $name — $why"
-  # Print only file:line — NEVER the matched content. On a public repo the Actions
+  # Print only file:line — NEVER the matched content. On a public repo the CI
   # log is public, so echoing the detected value would re-leak the secret itself.
-  printf '%s\n' "$matches" | sed -E 's/^([^:]+:[0-9]+):.*/\1: «match redacted — open this location to view»/'
+  printf '%s\n' "$matches" | awk -F'\t' 'NF>=2 { print $1 ":" $2 ": «match redacted — open this location to view»" }'
   echo "::endgroup::"
   if [[ "$sev" == "BLOCK" ]]; then
     echo "::error title=public-repo-guard ($name)::$why — $count occurrence(s). Remove it, or annotate the line with '# guard:allow <reason>' if it is a verified-safe example."
@@ -72,6 +78,21 @@ check() {
     echo "::warning title=public-repo-guard ($name)::$why — $count occurrence(s) (non-blocking; review)."
   fi
 }
+
+# Paths that embed the inline-allow marker would make a whole-line grep skip
+# every hit in that file (rg prints path:line:text). Fail closed on the spoof.
+_pathraw="$(rg --files --hidden --no-ignore-vcs "${IGNORE[@]}" 2>/dev/null)"; _pathrc=$?
+if (( _pathrc >= 2 )); then
+  echo "::error title=public-repo-guard (allow-marker-in-path)::ripgrep failed (exit $_pathrc) listing files — failing closed."; exit 2
+fi
+_pathhits="$(printf '%s\n' "$_pathraw" | grep -F 'guard:allow' || true)"
+if [[ -n "$_pathhits" ]]; then
+  echo "::group::[BLOCK] allow-marker-in-path — # guard:allow belongs on a source line, not in a path"
+  printf '%s\n' "$_pathhits"
+  echo "::endgroup::"
+  echo "::error title=public-repo-guard (allow-marker-in-path)::File path contains 'guard:allow'. Put the marker on the source line as '# guard:allow <reason>', or rename the path."
+  VIOLATIONS=$((VIOLATIONS+1))
+fi
 
 # --- Financial / billing identifiers -----------------------------------------
 check BLOCK stripe-account   'acct_[A-Za-z0-9]{16,}'                              'Live Stripe account ID — financial infra, never publish'
