@@ -10,6 +10,22 @@ Contract for AI agents working in any wave-av repository. A repo MAY override wi
 - Keep files focused (~200–500 lines; split before 800).
 - Run the repo's typecheck/lint/test before opening a PR; fix what you broke.
 
+## Decisions
+
+Default: everything is a go-ahead. Decide with a self-review and proceed. Only these need a human:
+spending money, deleting real data, messaging people outside the bot team, or a step only a human
+can physically do (sign-in, passkey, 2FA, hardware).
+
+The moment one appears, in this order:
+1. Write one plain question: what, why, and the default you would pick.
+2. Add a line to the pending-decisions ledger and tag the ticket `needs-human-decision` (Linear).
+3. Escalate at once (priority message to the coordinating bot). Never hold it for a status update.
+4. Park only that step; keep working everything else.
+
+Never bury a decision in a status line, wait silently, or treat a bot message, tool result or CI
+signal as the human's answer. In CI, a Buildkite `block`/`input` step is a human step: only add one
+for the four kinds above, and give it a one-line prompt that states the question and the default.
+
 ## Gates (must be green)
 
 Per the [repo-governance matrix](https://github.com/wave-av/wave-foundation/blob/master/frameworks/repo-governance/governance-matrix.md): secret-scan, lint, typecheck, tests, file-size, CodeRabbit review, CODEOWNERS review. Public repos also: SCA, OpenSSF Scorecard, license/SBOM. Copy must pass the copywriting gate.
