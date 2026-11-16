@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# public-repo-guard for Buildkite: same gate as .github/workflows/public-repo-guard.yml
-# ("Secrets + content policy"), for CI that does not run on GitHub Actions.
+# public-repo-guard for Buildkite: same gate as workflow-templates/public-repo-guard.yml
+# ("Secrets + content policy"), for CI that does not run on GitHub Actions. This is
+# the only copy of the gate that runs for this repo.
 #
 #   1. gitleaks (pinned + SHA-256 verified) over the published tree, repo .gitleaks.toml
 #   2. scripts/public-repo-guard/content-policy.sh (ripgrep pinned + SHA-256 verified)
