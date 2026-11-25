@@ -15,9 +15,11 @@
 # Usage: scripts/public-repo-guard/content-policy.sh [root]   (default root = .)
 set -uo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="${1:-.}"
 cd "$ROOT" || { echo "::error::content-policy: cannot cd to $ROOT"; exit 2; }
 command -v rg >/dev/null 2>&1 || { echo "::error::content-policy: ripgrep (rg) required"; exit 2; }
+command -v python3 >/dev/null 2>&1 || { echo "::error::content-policy: python3 required to decode source escapes"; exit 2; }
 
 VIOLATIONS=0
 
@@ -37,6 +39,18 @@ if [[ -f .guardignore ]]; then
     IGNORE+=( -g "!$line" )
   done < .guardignore
 fi
+
+# Expand \xHH / \u{...} / HTML entities / zero-width chars into a temp tree so
+# BLOCK rules still fire when a source file hides a live key as language-level
+# escapes. gitleaks 8.30.1 already decodes JSON \uXXXX and base64; it misses
+# these forms. Fail closed if the decoder errors.
+_DECODE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/content-policy-decode.XXXXXX")"
+trap 'rm -rf "$_DECODE_DIR"' EXIT
+python3 "$SCRIPT_DIR/decode-source-escapes.py" "$PWD" "$_DECODE_DIR" || {
+  echo "::error title=public-repo-guard (decode)::decode-source-escapes.py failed — failing closed."
+  exit 2
+}
+cd "$_DECODE_DIR" || { echo "::error::content-policy: cannot cd to decode dir"; exit 2; }
 
 # check <BLOCK|WARN> <name> <regex> <why>
 # A non-empty regex is required; an accidental empty pattern would match every
